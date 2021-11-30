@@ -3,6 +3,12 @@ from utility.terminal import DEFAULT_SLEEP_SECS, clear_screen
 
 
 def confirmation(prompt: str) -> bool:
+    """
+    asks the user for a yes/no answer based on the ''prompt''
+
+    :param prompt: the prompt to show the user, generally a question
+    :return: returns ''True'' if the user answer is affirmative, else ''False''
+    """
     prompt += " [Y/n] "
 
     user_input = input(prompt).casefold()
@@ -12,6 +18,14 @@ def confirmation(prompt: str) -> bool:
 
 
 def select_option(options: [], header: str = "Options") -> int:
+    """
+    from a list of options, the user selects the index of the desired option
+
+    :param options: array of ''string'' to show to the user
+    :param header: the header of the options
+    :return: returns the index of the desired option
+    """
+
     valid_option = False
     options = list(options)
 
@@ -36,6 +50,13 @@ def select_option(options: [], header: str = "Options") -> int:
 
 
 def are_all_positives(numbers: [], can_be_zero: bool = True) -> bool:
+    """
+    checks whether a given array is made of only positive numbers
+
+    :param numbers: an array of numbers
+    :param can_be_zero: if set to ''True'', zero will be a valid value for the array
+    :return: returns ''True'' if the array ''numbers'' contains only valid values
+    """
 
     for number in numbers:
         if can_be_zero:

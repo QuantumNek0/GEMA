@@ -258,7 +258,7 @@ rest = -1
 
 Scale = namedtuple("Scale", ["name", "values"])
 
-scales = {
+scales = { # dictionary of scales
     "C": {
         "natural": {
             "maj": [c, d, e, f, g, a, b],
@@ -365,7 +365,7 @@ scales = {
     }
 }
 
-Scales = [
+Scales = [ # storing scales into an array along with a name for an easy way to show them to the user
     Scale(
         "C",
         [

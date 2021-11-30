@@ -284,8 +284,8 @@ def sort_population(population: [], fitness_func: FitnessFunc) -> Tuple[Populati
     """
     Sorts the population from max to min according to their fitness value
 
-    :param population:
-    :param fitness_func:
+    :param population: population of genomes
+    :param fitness_func: criteria to assign fitness values to each genome
     :return: returns the sorted population along with their fitness values stored in a different array
     """
 
