@@ -1,10 +1,11 @@
-# YouTube: Kie Codes
-
 from random import *
+from statistics import mean
+from math import ceil
 from typing import List, Callable, Tuple
 
 from classes.midi import *
 from utility.user_input import confirmation
+from utility.music import chord_type_from_degree
 
 DEFAULT_GENERATION_LIMIT = 100
 
@@ -18,7 +19,7 @@ FitnessFunc = Callable[[Genome], int]
 PopulateFunc = Callable[[], Population]
 SelectionFunc = Callable[[Population, List[int]], Tuple[Genome, Genome]]
 CrossoverFunc = Callable[[Genome, Genome], Tuple[Genome, Genome]]
-MutationFunc = Callable[[Genome], Genome]
+MutationFunc = Callable[[Genome, int], Genome]
 
 
 def gen_rand_note(no_bits: int, note_probability: float = 0.7) -> Note:
@@ -63,8 +64,20 @@ def gen_rand_genome(
     """
 
     no_notes = int(4 / note_length) * no_bars # the 4 represents the 4 beats in a single bar (time signature = 4/4)
+    notes_per_bar = no_notes / no_bars
 
-    genome = [gen_rand_note(bits_per_note, note_probability) for _ in range(no_notes)]
+    # genome = [gen_rand_note(bits_per_note, note_probability) for _ in range(no_notes)]
+    genome = []
+
+    for i in range(no_notes):
+        if i % notes_per_bar == 0:
+
+            root = [0] * bits_per_note
+            root[0] = 1
+
+            genome += [root]
+        else:
+            genome += [gen_rand_note(bits_per_note, note_probability)]
 
     return genome if blocks else continuous(genome)
 
@@ -91,18 +104,20 @@ def gen_rand_population(
             for _ in range(population_size)]
 
 
-def fitness(genome: Genome, scale: [], note_length: float, bpm: int) -> int:
+def fitness(genome: Genome, scale: [], scale_type: str, harmonic_progression: [], note_length: float, bpm: int) -> int:
     """
     rates the performance of a genome
 
     :param genome: genome
     :param scale: the scale is needed to play the midi file
+    :param scale_type: declares whether the scale is major or minor
+    :param harmonic_progression: harmonic progression
     :param note_length: length of the notes
     :param bpm: beats per minute
     :return: returns a fitness level for a given genome, based on the rating of the user
     """
 
-    mid = genome_to_midi(genome, scale, note_length)
+    mid = genome_to_midi(genome, scale, scale_type, harmonic_progression, note_length)
     mid.add_tempo(bpm)
 
     mid.play()
@@ -161,7 +176,7 @@ def gen_weighted_dist(population: Population, fitness_values: List[int]) -> Popu
 
 
 def mutation(genome: Genome, no_mutations: int = 1,
-             mutation_probability: float = 0.5, note_probability: float = 0.7) -> Genome:
+             mutation_probability: float = 0.5, note_probability: float = 0.8) -> Genome:
     """
     mutates a given genome
 
@@ -218,8 +233,8 @@ def run_evolution(
 
             parents = selection_func(population, fitness_values)
             offspring_a, offspring_b = crossover_func(parents[0], parents[1])
-            offspring_a = mutation_func(offspring_a)
-            offspring_b = mutation_func(offspring_b)
+            offspring_a = mutation_func(offspring_a, 10 - ceil(mean(fitness_values)))
+            offspring_b = mutation_func(offspring_b, 10 - ceil(mean(fitness_values)))
 
             next_generation += [offspring_a, offspring_b]
 
@@ -228,34 +243,57 @@ def run_evolution(
     return population, generation
 
 
-def genome_to_midi(genome: Genome, scale: [], note_length: float,
-                   high_note_prob: float = 0.6, octave_origin: int = 4) -> MIDI:
+def genome_to_midi(genome: Genome, scale: [], scale_type: str, harmonic_progression: [], note_length: float,
+                   high_note_prob: float = 0.8, octave_origin: int = 4) -> MIDI:
     """
     converts a given genome to a midi file
 
     :param genome: binary array
     :param scale: collection of allowed values
+    :param scale_type: declares whether the scale is major or minor
+    :param harmonic_progression: harmonic progression
     :param note_length: length of the notes in beats
     :param high_note_prob: chance of the deviation being above the root
     :param octave_origin: the pitch of the root
     :return: returns a MIDIFile object with the specified values from a genome
     """
 
-    mid = MIDI(single_notes=True)
+    mid = MIDI(tracks=2, single_notes=True)
+    notes_per_bar = int(4 / note_length)
 
-    root = scale[0][octave_origin] # root is always at index 0
+    root = scale[0][octave_origin]
+
+    progression = []
+    progression += [scale[degree - 1][octave_origin] for degree in harmonic_progression]
+
     scale = continuous(scale, return_sorted=True) # gets rid of the separations between notes
     root_pos = scale.index(root) # finds the root in this new array
 
-    for note in genome:
+    current_bar = 0
+    for i, note in enumerate(genome):
         rest_note = True
+
+        if i % notes_per_bar == 0:
+            root_pos = scale.index(progression[current_bar])
+
+            mid.add_chord(scale[root_pos], chord_type_from_degree(harmonic_progression[current_bar], scale_type),
+                          duration=4, track=1, volume=25)
+
+            current_bar += 1
+
         for pitch, bit in enumerate(note):
 
             if bit == 1:
-                mid.add_note(
-                    scale[root_pos + pitch] if random.random() <= high_note_prob else scale[root_pos - pitch],
-                    note_length
-                )
+                # mid.add_note(
+                #     scale[root_pos + pitch] if random.random() <= high_note_prob else scale[root_pos - pitch],
+                #     note_length
+                # )
+                if random.random() <= high_note_prob:
+                    mid.add_note(scale[root_pos + pitch], note_length)
+
+                else:
+                    mid.add_note(scale[root_pos - pitch], note_length)
+
                 rest_note = False
                 break
 
