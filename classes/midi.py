@@ -139,41 +139,6 @@ class MIDI:
 
         self.s.stop()
 
-    # def play(self, track: int = 0, no_plays: int = 1, volume: float = 0.5, play_metronome: bool = False):
-    #     """
-    #
-    #     plays the MIDIFile notes via a PyoObject instance
-    #
-    #     :param track: the track where the notes will be played
-    #     :param no_plays: the number of times the file will be looped
-    #     :param volume: volume of the audio output
-    #     :param play_metronome: plays a metronome if set to ''True''
-    #
-    #     """
-    #
-    #     met = MIDI.metronome(self.bpm) if play_metronome else None
-    #     self.s.start()
-    #
-    #     for _ in range(no_plays):
-    #
-    #         for i, note in enumerate(self.melody[track]["notes"]):
-    #
-    #             if type(note) == int: # note case
-    #                 if note != rest:
-    #                     event = SuperSaw(freq=midiToHz(note), mul=volume)
-    #                     event.out(dur=MIDI.beats_to_secs(self.melody[track]["duration"][i], self.bpm))
-    #
-    #             else: # chord case
-    #                 event = []
-    #                 for j, n in enumerate(note):
-    #                     event += [SuperSaw(freq=midiToHz(n), mul=volume)]
-    #                     event[j].out(dur=MIDI.beats_to_secs(self.melody[track]["duration"][i], self.bpm))
-    #
-    #             time.sleep(MIDI.beats_to_secs(self.melody[track]["duration"][i], self.bpm))
-    #             # gives time to play the note/chord
-    #
-    #     self.s.stop()
-
     @staticmethod
     def metronome(bpm: int):
         """

@@ -49,7 +49,7 @@ def gen_rand_genome(
             note_length: float,
             no_bars: int,
             note_probability: float = 0.7,
-            blocks: bool = True
+            force_root: bool = True
         ) -> Genome:
     """
     generates a random genome, each genome has an array of random notes
@@ -58,28 +58,31 @@ def gen_rand_genome(
     :param note_length: the length of the note (in beats), each note has the same length
     :param no_bars: number of bars created
     :param note_probability: chance of returning a note instead of a rest
-    :param blocks: if ''True'', returns each note into a different array [[note], [note], ...]
-           instead of returning one big array [note + note + ...]
+    :param force_root: forces a root note at the beginning of each bar
     :return: returns a random genome
     """
 
     no_notes = int(4 / note_length) * no_bars # the 4 represents the 4 beats in a single bar (time signature = 4/4)
     notes_per_bar = no_notes / no_bars
 
-    # genome = [gen_rand_note(bits_per_note, note_probability) for _ in range(no_notes)]
     genome = []
 
-    for i in range(no_notes):
-        if i % notes_per_bar == 0:
+    if force_root:
+        # Forces a root note at the beginning of each bar
 
-            root = [0] * bits_per_note
-            root[0] = 1
+        for i in range(no_notes):
+            if i % notes_per_bar == 0:
 
-            genome += [root]
-        else:
-            genome += [gen_rand_note(bits_per_note, note_probability)]
+                root = [0] * bits_per_note
+                root[0] = 1
 
-    return genome if blocks else continuous(genome)
+                genome += [root]
+            else:
+                genome += [gen_rand_note(bits_per_note, note_probability)]
+    else:
+        genome = [gen_rand_note(bits_per_note, note_probability) for _ in range(no_notes)]
+
+    return genome
 
 
 def gen_rand_population(
@@ -100,7 +103,7 @@ def gen_rand_population(
     :return: returns a random population
     """
 
-    return [gen_rand_genome(bits_per_note, note_length, no_bars, note_probability, blocks=True)
+    return [gen_rand_genome(bits_per_note, note_length, no_bars, note_probability, force_root=True)
             for _ in range(population_size)]
 
 
@@ -116,14 +119,24 @@ def fitness(genome: Genome, scale: [], scale_type: str, harmonic_progression: []
     :param bpm: beats per minute
     :return: returns a fitness level for a given genome, based on the rating of the user
     """
+    from utility.terminal import clear_screen
 
     mid = genome_to_midi(genome, scale, scale_type, harmonic_progression, note_length)
     mid.add_tempo(bpm)
 
-    mid.play()
-    rating = int(input("\nrating >> "))
+    rating = 'p'
+    while rating == 'p':
+        clear_screen()  # clears pyo prompt
 
-    return abs(rating)
+        print("playing melody...")
+        mid.play()
+
+        clear_screen()
+        print("input 'p' for playing the melody again")
+
+        rating = input("\nrating >> ")
+
+    return abs(int(rating))
 
 
 def single_point_crossover(genome_a: Genome, genome_b: Genome) -> Tuple[Genome, Genome]:
@@ -233,8 +246,8 @@ def run_evolution(
 
             parents = selection_func(population, fitness_values)
             offspring_a, offspring_b = crossover_func(parents[0], parents[1])
-            offspring_a = mutation_func(offspring_a, 10 - ceil(mean(fitness_values)))
-            offspring_b = mutation_func(offspring_b, 10 - ceil(mean(fitness_values)))
+            offspring_a = mutation_func(offspring_a, 10 - ceil(mean(fitness_values))) # the lower the fitness value of the overall population
+            offspring_b = mutation_func(offspring_b, 10 - ceil(mean(fitness_values))) # the more mutations it gets  through
 
             next_generation += [offspring_a, offspring_b]
 
@@ -261,10 +274,10 @@ def genome_to_midi(genome: Genome, scale: [], scale_type: str, harmonic_progress
     mid = MIDI(tracks=2, single_notes=True)
     notes_per_bar = int(4 / note_length)
 
-    root = scale[0][octave_origin]
+    root = scale[0][octave_origin] # scale root
 
     progression = []
-    progression += [scale[degree - 1][octave_origin] for degree in harmonic_progression]
+    progression += [scale[degree - 1][octave_origin] for degree in harmonic_progression] # finds the midi values for the progression
 
     scale = continuous(scale, return_sorted=True) # gets rid of the separations between notes
     root_pos = scale.index(root) # finds the root in this new array
@@ -274,7 +287,7 @@ def genome_to_midi(genome: Genome, scale: [], scale_type: str, harmonic_progress
         rest_note = True
 
         if i % notes_per_bar == 0:
-            root_pos = scale.index(progression[current_bar])
+            root_pos = scale.index(progression[current_bar]) # changes the scale root to a chord root
 
             mid.add_chord(scale[root_pos], chord_type_from_degree(harmonic_progression[current_bar], scale_type),
                           duration=4, track=1, volume=25)
@@ -284,10 +297,6 @@ def genome_to_midi(genome: Genome, scale: [], scale_type: str, harmonic_progress
         for pitch, bit in enumerate(note):
 
             if bit == 1:
-                # mid.add_note(
-                #     scale[root_pos + pitch] if random.random() <= high_note_prob else scale[root_pos - pitch],
-                #     note_length
-                # )
                 if random.random() <= high_note_prob:
                     mid.add_note(scale[root_pos + pitch], note_length)
 
@@ -297,7 +306,7 @@ def genome_to_midi(genome: Genome, scale: [], scale_type: str, harmonic_progress
                 rest_note = False
                 break
 
-            if rest_note and pitch == len(note) - 1:
+            if rest_note and pitch == len(note) - 1: # only adds the rest after searching the entire note
                 mid.add_note(rest, note_length)
 
     return mid

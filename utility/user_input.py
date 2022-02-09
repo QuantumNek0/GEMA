@@ -2,14 +2,17 @@ import time
 from utility.terminal import DEFAULT_SLEEP_SECS, clear_screen
 
 
-def confirmation(prompt: str) -> bool:
+def confirmation(prompt: str, note: str = "") -> bool:
     """
     asks the user for a yes/no answer based on the ''prompt''
 
     :param prompt: the prompt to show the user, generally a question
+    :param note: adds a note below the prompt
     :return: returns ''True'' if the user answer is affirmative, else ''False''
     """
-    prompt += " [Y/n] "
+    prompt += " [Y/n]"
+    prompt += "\nNote: " + note if note != "" else ""
+    prompt += "\n\n>> "
 
     user_input = input(prompt).casefold()
     clear_screen()

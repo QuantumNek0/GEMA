@@ -3,6 +3,12 @@ from random import randint
 
 
 def chord_type_from_degree(degree: int, scale_type: str) -> str:
+    """
+    returns whether the passed degree is major or minor depending on the scale type
+
+    :param degree: degree of the harmonic progression
+    :param scale_type: whether the scale is major or minor
+    """
     if degree == 1:
         return "maj" if scale_type == "maj" else "min"
 
@@ -29,6 +35,11 @@ def chord_type_from_degree(degree: int, scale_type: str) -> str:
 
 
 def rand_harmonic_progression() -> List[int]:
+    """
+    Handcrafted set of harmonic progressions to be chosen at random
+
+    :return: only returns progression of exactly 4 notes
+    """
     r = randint(0, 10)
 
     if r == 0:

@@ -1,28 +1,32 @@
 from functools import partial
 
 from algorithm.genetic import *
-from utility.terminal import *
 from utility.user_input import *
+from utility.terminal import clear_screen, DEFAULT_SLEEP_SECS
 from utility.music import rand_harmonic_progression
 
 
 def main():
 
     # default values
-    bits_per_note = 4  # Deviation
-    population_size = 5
 
+    bits_per_note = 4
+    population_size = 5
     notes_per_bar = 8
     no_bars = 4
     bpm = 128
+    harmonic_progression = [] # 1 chord per bar
 
-    harmonic_progression = []
-
-    continue_evolution = True
+    generate_melody = True
 
     clear_screen() # clears the pyo prompt
-    while continue_evolution:
+
+    # main loop
+
+    while generate_melody:
         valid_parameters = False
+
+        # validating parameters
 
         while not valid_parameters:
 
@@ -46,16 +50,14 @@ def main():
                 scale_root = randrange(0, len(Scales))
                 scale_type = randrange(0, len(Scales[scale_root].values))
 
-            if not confirmation("randomize harmonic progression?"):
-                for _ in range(4):
+            if not confirmation("randomize harmonic progression?",
+                                note="if the number of bars is not exactly 4, you'll be asked for an input regardless") or no_bars != 4:
+                for _ in range(no_bars):
                     harmonic_progression += [int(input(">> "))]
             else:
-                for _ in range(4):
-                    # harmonic_progression += [randint(1, 7)]
-                    harmonic_progression = rand_harmonic_progression()
+                harmonic_progression = rand_harmonic_progression() # does not support progressions for more than 4 bars
 
-            if not are_all_positives([bits_per_note, population_size, notes_per_bar, no_bars, bpm], can_be_zero=False) \
-                    and not are_all_positives(harmonic_progression, can_be_zero=False):
+            if not are_all_positives([bits_per_note, population_size, notes_per_bar, no_bars, bpm] + harmonic_progression, can_be_zero=False):
 
                 print("\nInvalid options!")
                 time.sleep(DEFAULT_SLEEP_SECS)
@@ -65,10 +67,14 @@ def main():
 
             clear_screen()
 
+        # calculating special parameters
+
         note_length = 4 / notes_per_bar  # the 4 represents the 4 beats in a single bar (time signature = 4/4)
 
         scale = Scales[scale_root].values[scale_type].values
         str_scale_type = "maj" if Scales[scale_root].values[scale_type].name.find("major") != -1 else "min"
+
+        # calling main evolution loop
 
         population, number_generations = run_evolution(
             populate_func=partial(
@@ -87,11 +93,8 @@ def main():
                 bpm=bpm
             )
         )
-        # best_genome = population[0]
-        #
-        # mid = genome_to_midi(best_genome, scale, str_scale_type, harmonic_progression, note_length)
-        # mid.add_tempo(bpm)
-        # mid.write_midi("out/best_melody")
+
+        # retrieving best genomes
 
         for i in range(3):
             melody = population[i]
@@ -100,11 +103,15 @@ def main():
             mid.add_tempo(bpm)
             mid.write_midi("melody" + str((i + 1)), path="out")
 
+        clear_screen() # clears pyo prompt
+
         print("\nhighest rated melodies stored in midi file!")
         time.sleep(DEFAULT_SLEEP_SECS)
 
+        # main loop stop condition
+
         clear_screen()
-        continue_evolution = False if not confirmation("generate another melody?") else True
+        generate_melody = False if not confirmation("generate another melody?", note="Melodies will be overwritten") else True
 
 
 if __name__ == '__main__':
