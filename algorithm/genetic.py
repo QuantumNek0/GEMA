@@ -8,6 +8,7 @@ from utility.user_input import confirmation
 from utility.music import chord_type_from_degree
 
 DEFAULT_GENERATION_LIMIT = 100
+DEFAULT_NOTE_PROBABILITY = 0.8
 
 Note = List[int]
 Genome = List[Note]
@@ -22,7 +23,7 @@ CrossoverFunc = Callable[[Genome, Genome], Tuple[Genome, Genome]]
 MutationFunc = Callable[[Genome, int], Genome]
 
 
-def gen_rand_note(no_bits: int, note_probability: float = 0.7) -> Note:
+def gen_rand_note(no_bits: int, note_probability: float = DEFAULT_NOTE_PROBABILITY) -> Note:
     """
     generates a random note represented by an array [], each index in the note represents the deviation from
     the scale root i.e. [1, 0, 0, 0] represents a 4 bit note representing the root note, [0, 1, 0, 0] is the
@@ -48,7 +49,7 @@ def gen_rand_genome(
             bits_per_note: int,
             note_length: float,
             no_bars: int,
-            note_probability: float = 0.7,
+            note_probability: float = DEFAULT_NOTE_PROBABILITY,
             force_root: bool = True
         ) -> Genome:
     """
@@ -66,10 +67,10 @@ def gen_rand_genome(
     notes_per_bar = no_notes / no_bars
 
     genome = []
+    past_note = []
 
     if force_root:
         # Forces a root note at the beginning of each bar
-
         for i in range(no_notes):
             if i % notes_per_bar == 0:
 
@@ -78,7 +79,12 @@ def gen_rand_genome(
 
                 genome += [root]
             else:
-                genome += [gen_rand_note(bits_per_note, note_probability)]
+                if random.random() <= 0.2 and past_note != [0] * bits_per_note:
+                    genome += [past_note]
+                else:
+                    genome += [gen_rand_note(bits_per_note, note_probability)]
+
+            past_note = genome[-1]
     else:
         genome = [gen_rand_note(bits_per_note, note_probability) for _ in range(no_notes)]
 
@@ -90,7 +96,7 @@ def gen_rand_population(
             bits_per_note: int,
             note_length: float,
             no_bars: int,
-            note_probability: float = 0.7,
+            note_probability: float = DEFAULT_NOTE_PROBABILITY,
         ) -> Population:
     """
     Generates a random population based on random notes
@@ -124,15 +130,15 @@ def fitness(genome: Genome, scale: [], scale_type: str, harmonic_progression: []
     mid = genome_to_midi(genome, scale, scale_type, harmonic_progression, note_length)
     mid.add_tempo(bpm)
 
-    rating = 'p'
-    while rating == 'p':
+    rating = 'r'
+    while rating == 'r':
         clear_screen()  # clears pyo prompt
 
         print("playing melody...")
         mid.play()
 
         clear_screen()
-        print("input 'p' for playing the melody again")
+        print("input 'r' for playing the melody again")
 
         rating = input("\nrating >> ")
 
@@ -189,7 +195,7 @@ def gen_weighted_dist(population: Population, fitness_values: List[int]) -> Popu
 
 
 def mutation(genome: Genome, no_mutations: int = 1,
-             mutation_probability: float = 0.5, note_probability: float = 0.8) -> Genome:
+             mutation_probability: float = 0.5, note_probability: float = DEFAULT_NOTE_PROBABILITY) -> Genome:
     """
     mutates a given genome
 
@@ -283,6 +289,8 @@ def genome_to_midi(genome: Genome, scale: [], scale_type: str, harmonic_progress
     root_pos = scale.index(root) # finds the root in this new array
 
     current_bar = 0
+    duration_counter = note_length
+
     for i, note in enumerate(genome):
         rest_note = True
 
@@ -294,20 +302,28 @@ def genome_to_midi(genome: Genome, scale: [], scale_type: str, harmonic_progress
 
             current_bar += 1
 
+        if i != len(genome) - 1:
+
+            if genome[i] == genome[i + 1] and random.random() <= high_note_prob:
+                duration_counter += note_length  # if the note repeats itself, those extra repetitions add up to the total duration of one note
+                continue
+
         for pitch, bit in enumerate(note):
 
             if bit == 1:
                 if random.random() <= high_note_prob:
-                    mid.add_note(scale[root_pos + pitch], note_length)
+                    mid.add_note(scale[root_pos + pitch], duration_counter)
 
                 else:
-                    mid.add_note(scale[root_pos - pitch], note_length)
+                    mid.add_note(scale[root_pos - pitch], duration_counter)
 
                 rest_note = False
                 break
 
             if rest_note and pitch == len(note) - 1: # only adds the rest after searching the entire note
-                mid.add_note(rest, note_length)
+                mid.add_note(rest, duration_counter)
+
+            duration_counter = note_length
 
     return mid
 

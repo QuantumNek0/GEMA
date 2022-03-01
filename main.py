@@ -11,7 +11,7 @@ def main():
     # default values
 
     bits_per_note = 4
-    population_size = 5
+    population_size = 6
     notes_per_bar = 8
     no_bars = 4
     bpm = 128
