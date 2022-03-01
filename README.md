@@ -17,3 +17,7 @@ Esta rama contiene la implementación de progresiones ármonicas, donde una prog
 | classes | Contiene la definicion de las clases (con sus respectivos metodos).
 | out | El folder objetivo donde se guardara el output (archivos midi).
 | utility | Contiene funciones utiles para solicitar inputs del usuario.
+
+# Documentación
+
+PDF: https://drive.google.com/file/d/1Zi49Lyhuiy58PmjGL-iuE5Y75xRLr8iB/view?usp=sharing
