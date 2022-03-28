@@ -3,12 +3,14 @@ from functools import partial
 from algorithm.genetic import *
 from utility.user_input import *
 from utility.terminal import clear_screen, DEFAULT_SLEEP_SECS
-from utility.music import rand_harmonic_progression
+from utility.music import *
 
 
 def main():
 
     # default values
+
+    moods = ["happy", "uplifting", "sad", "melancholy"]
 
     bits_per_note = 4
     population_size = 6
@@ -42,20 +44,34 @@ def main():
 
             clear_screen()
 
-            if not confirmation("randomize scale?"):
+            if confirmation("Select mood?"):
+                mood = select_option(moods, "Select the desired mood")
+                scale_root = randrange(0, len(Scales))
+
+                if mood == 0 or mood == 1:
+                    scale_type = 1
+
+                    while scale_type % 2 != 0: # guarantees a major scale
+                        scale_type = randrange(0, len(Scales[scale_root].values))
+
+                    harmonic_progression = mood_progression("maj", "happy" if mood == 0 else "uplifting")
+
+                if mood == 2 or mood == 3:
+                    scale_type = 0
+
+                    while scale_type % 2 == 0:  # guarantees a minor scale
+                        scale_type = randrange(0, len(Scales[scale_root].values))
+
+                    harmonic_progression = mood_progression("min", "sad" if mood == 2 else "melancholy")
+
+            else:
+
                 scale_root = select_option((s.name for s in Scales), "Root of scale")
                 scale_type = select_option((s.name for s in Scales[scale_root].values), "Scale type")
 
-            else:
-                scale_root = randrange(0, len(Scales))
-                scale_type = randrange(0, len(Scales[scale_root].values))
-
-            if not confirmation("randomize harmonic progression?",
-                                note="if the number of bars is not exactly 4, you'll be asked for an input regardless") or no_bars != 4:
+                print("harmonic progression")
                 for _ in range(no_bars):
                     harmonic_progression += [int(input(">> "))]
-            else:
-                harmonic_progression = rand_harmonic_progression() # does not support progressions for more than 4 bars
 
             if not are_all_positives([bits_per_note, population_size, notes_per_bar, no_bars, bpm] + harmonic_progression, can_be_zero=False):
 
