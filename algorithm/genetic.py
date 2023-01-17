@@ -21,7 +21,7 @@ CrossoverFunc = Callable[[Genome, Genome], Tuple[Genome, Genome]]
 MutationFunc = Callable[[Genome], Genome]
 
 
-def gen_rand_note(no_bits: int, note_probability: float = 0.7) -> Note:
+def gen_rand_note(no_bits: int, note_probability: float = 0.45) -> Note:
     """
     generates a random note represented by an array [], each index in the note represents the deviation from
     the scale root i.e. [1, 0, 0, 0] represents a 4 bit note representing the root note, [0, 1, 0, 0] is the
@@ -47,7 +47,7 @@ def gen_rand_genome(
             bits_per_note: int,
             note_length: float,
             no_bars: int,
-            note_probability: float = 0.7,
+            note_probability: float = 0.45,
             blocks: bool = True
         ) -> Genome:
     """
@@ -74,7 +74,7 @@ def gen_rand_population(
             bits_per_note: int,
             note_length: float,
             no_bars: int,
-            note_probability: float = 0.7,
+            note_probability: float = 0.45,
         ) -> Population:
     """
     Generates a random population based on random notes
@@ -101,14 +101,24 @@ def fitness(genome: Genome, scale: [], note_length: float, bpm: int) -> int:
     :param bpm: beats per minute
     :return: returns a fitness level for a given genome, based on the rating of the user
     """
+    from utility.terminal import clear_screen
 
     mid = genome_to_midi(genome, scale, note_length)
     mid.add_tempo(bpm)
 
-    mid.play()
-    rating = int(input("\nrating >> "))
+    rating = 'r'
+    while rating == 'r':
+        clear_screen()  # clears pyo prompt
 
-    return abs(rating)
+        print("playing melody...")
+        mid.play()
+
+        clear_screen()
+        print("input 'r' for replay")
+
+        rating = input("\nrating >> ")
+
+    return abs(int(rating))
 
 
 def single_point_crossover(genome_a: Genome, genome_b: Genome) -> Tuple[Genome, Genome]:
@@ -161,7 +171,7 @@ def gen_weighted_dist(population: Population, fitness_values: List[int]) -> Popu
 
 
 def mutation(genome: Genome, no_mutations: int = 1,
-             mutation_probability: float = 0.5, note_probability: float = 0.7) -> Genome:
+             mutation_probability: float = 0.5, note_probability: float = 0.5) -> Genome:
     """
     mutates a given genome
 

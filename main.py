@@ -4,16 +4,7 @@ from algorithm.genetic import *
 from utility.terminal import *
 from utility.user_input import *
 
-
 def main():
-
-    # default values
-    bits_per_note = 4  # Deviation
-    population_size = 5
-
-    notes_per_bar = 8
-    no_bars = 4
-    bpm = 128
 
     continue_evolution = True
 
@@ -22,12 +13,21 @@ def main():
         valid_parameters = False
 
         while not valid_parameters:
+            # default values
+            bits_per_note = 4  # Deviation
+            population_size = 5
+            output_size = 3
+
+            notes_per_bar = 16
+            no_bars = 4
+            bpm = 128
 
             if not confirmation("Use default values?"):
 
                 if confirmation("Show advanced options?"):
                     bits_per_note = int(input("Bits per note: "))
                     population_size = int(input("Population size: "))
+                    output_size = int(input("Output size: "))
 
                 notes_per_bar = int(input("Notes per bar: "))
                 no_bars = int(input("Number of bars: "))
@@ -42,7 +42,9 @@ def main():
                 scale_root = randrange(0, len(Scales))
                 scale_type = randrange(0, len(Scales[scale_root].values))
 
-            if not are_all_positives([bits_per_note, population_size, notes_per_bar, no_bars, bpm], can_be_zero=False):
+            if not (are_all_positives([bits_per_note, population_size, output_size,notes_per_bar, no_bars, bpm], can_be_zero=False) \
+                    and output_size <= population_size):
+
                 print("\nInvalid options!")
                 time.sleep(DEFAULT_SLEEP_SECS)
 
@@ -69,13 +71,18 @@ def main():
                 bpm=bpm
             )
         )
-        best_genome = population[0]
+        # retrieving best genomes
 
-        mid = genome_to_midi(best_genome, scale, note_length)
-        mid.add_tempo(bpm)
-        mid.write_midi("best_melody")
+        for i in range(output_size):
+            melody = population[i]
 
-        print("\nhighest rated melody stored in midi file!")
+            mid = genome_to_midi(melody, scale, note_length)
+            mid.add_tempo(bpm)
+            mid.write_midi("melody" + str((i + 1)), path="out")
+
+        clear_screen()  # clears pyo prompt
+
+        print("\nhighest rated melodies stored in midi file!")
         time.sleep(DEFAULT_SLEEP_SECS)
 
         clear_screen()

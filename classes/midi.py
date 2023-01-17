@@ -1,8 +1,8 @@
 from midiutil import MIDIFile
+from mido import MidiFile
 from pyo import *
 
 from collections import namedtuple
-import time
 
 
 class MIDI:
@@ -31,11 +31,7 @@ class MIDI:
         self.m = MIDIFile(tracks)
         self.single_notes = single_notes
 
-        self.melody = {
-            "notes": [],
-            "duration": [],
-            "beat": []
-        }
+        self.melody = [{"notes": [], "duration": [], "beat": []} for _ in range(tracks)]
 
         self.s = Server().boot()
 
@@ -67,16 +63,16 @@ class MIDI:
 
         """
 
-        self.melody["beat"] += [sum(self.melody["duration"])] if self.single_notes else [on_beat]
+        self.melody[track]["beat"] += [sum(self.melody[track]["duration"])] if self.single_notes else [on_beat]
         # the beat is at where the previous note/chord ended
 
-        self.melody["duration"] += [duration]
+        self.melody[track]["duration"] += [duration]
 
         if note != rest:
-            self.melody["notes"] += [note]
-            self.m.addNote(track, channel, note, self.melody["beat"][-1], duration, volume)
+            self.melody[track]["notes"] += [note]
+            self.m.addNote(track, channel, note, self.melody[track]["beat"][-1], duration, volume)
         else:
-            self.melody["notes"] += [rest]
+            self.melody[track]["notes"] += [rest]
 
     def add_chord(self,
                   root: int, chord_type: str, duration: float = 1,
@@ -96,62 +92,49 @@ class MIDI:
 
         """
 
-        self.melody["beat"] += [sum(self.melody["duration"])] if self.single_notes else [on_beat]
+        self.melody[track]["beat"] += [sum(self.melody[track]["duration"])] if self.single_notes else [on_beat]
         # the beat is at where the previous note/chord ended
 
         chord = MIDI.chord_from_root(root, chord_type)
 
-        self.melody["notes"] += [chord]
-        self.melody["duration"] += [duration]
+        self.melody[track]["notes"] += [chord]
+        self.melody[track]["duration"] += [duration]
 
         for note in chord:
-            self.m.addNote(track, channel, note, self.melody["beat"][-1], duration, volume)
+            self.m.addNote(track, channel, note, self.melody[track]["beat"][-1], duration, volume)
 
-    def write_midi(self, name: str = "output", mode: str = "wb"):
+    def write_midi(self, name: str = "output", path: str = "", mode: str = "wb"):
         """
 
         writes a midi file with the MIDIFile object values
 
         :param name: name of the file (must include extension .mid)
+        :param path: the path to output the midi
         :param mode: how the file is opened
 
         """
 
         name += ".mid"
-        with open(name, mode) as out:
+        path += "/" if path != "" else ""
+
+        with open(path + name, mode) as out:
             self.m.writeFile(out)
 
-    def play(self, no_plays: int = 1, volume: float = 0.5, play_metronome: bool = False):
-        """
+    def play(self):
+        self.write_midi("play", path="classes/temp")
 
-        plays the MIDIFile notes via a PyoObject instance
-
-        :param no_plays: the number of times the file will be looped
-        :param volume: volume of the audio output
-        :param play_metronome: plays a metronome if set to ''True''
-
-        """
-
-        met = MIDI.metronome(self.bpm) if play_metronome else None
         self.s.start()
 
-        for _ in range(no_plays):
+        mid = Notein()
+        amp = MidiAdsr(mid["velocity"])
+        pit = MToF(mid["pitch"])
+        osc = Osc(SquareTable(), freq=pit, mul=amp).mix(1)
+        rev = STRev(osc, revtime=1, cutoff=4000, bal=0.2).out()
 
-            for i, note in enumerate(self.melody["notes"]):
+        mid = MidiFile("classes/temp/play.mid")
 
-                if type(note) == int: # note case
-                    if note != rest:
-                        event = SuperSaw(freq=midiToHz(note), mul=volume)
-                        event.out(dur=MIDI.beats_to_secs(self.melody["duration"][i], self.bpm))
-
-                else: # chord case
-                    event = []
-                    for j, n in enumerate(note):
-                        event += [SuperSaw(freq=midiToHz(n), mul=volume)]
-                        event[j].out(dur=MIDI.beats_to_secs(self.melody["duration"][i], self.bpm))
-
-                time.sleep(MIDI.beats_to_secs(self.melody["duration"][i], self.bpm))
-                # gives time to play the note/chord
+        for message in mid.play():
+            self.s.addMidiEvent(*message.bytes())
 
         self.s.stop()
 
@@ -222,7 +205,7 @@ i.e c[4] = 60 = C4
 
 # Natural
 
-c = [12, 24, 36, 48, 60, 72, 84, 96, 108, 120]
+c = [12, 24, 36, 48 , 60, 72, 84, 96, 108, 120]
 d = [14, 26, 38, 50, 62, 74, 86, 98, 110, 122]
 e = [16, 28, 40, 52, 64, 76, 88, 100, 112, 124]
 f = [17, 29, 41, 53, 65, 77, 89, 101, 113, 125]
@@ -444,3 +427,4 @@ Scales = [ # storing scales into an array along with a name for an easy way to s
         ]
     )
 ]
+
