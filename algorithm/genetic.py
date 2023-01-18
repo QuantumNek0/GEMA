@@ -7,6 +7,7 @@ from classes.midi import *
 from utility.user_input import confirmation
 
 DEFAULT_GENERATION_LIMIT = 100
+DEFAULT_NOTE_PROBABILITY = 0.45
 
 Note = List[int]
 Genome = List[Note]
@@ -21,7 +22,7 @@ CrossoverFunc = Callable[[Genome, Genome], Tuple[Genome, Genome]]
 MutationFunc = Callable[[Genome], Genome]
 
 
-def gen_rand_note(no_bits: int, note_probability: float = 0.45) -> Note:
+def gen_rand_note(no_bits: int, note_probability: float = DEFAULT_NOTE_PROBABILITY) -> Note:
     """
     generates a random note represented by an array [], each index in the note represents the deviation from
     the scale root i.e. [1, 0, 0, 0] represents a 4 bit note representing the root note, [0, 1, 0, 0] is the
@@ -47,7 +48,7 @@ def gen_rand_genome(
             bits_per_note: int,
             note_length: float,
             no_bars: int,
-            note_probability: float = 0.45,
+            note_probability: float = DEFAULT_NOTE_PROBABILITY,
             blocks: bool = True
         ) -> Genome:
     """
@@ -74,7 +75,7 @@ def gen_rand_population(
             bits_per_note: int,
             note_length: float,
             no_bars: int,
-            note_probability: float = 0.45,
+            note_probability: float = DEFAULT_NOTE_PROBABILITY,
         ) -> Population:
     """
     Generates a random population based on random notes
@@ -171,7 +172,7 @@ def gen_weighted_dist(population: Population, fitness_values: List[int]) -> Popu
 
 
 def mutation(genome: Genome, no_mutations: int = 1,
-             mutation_probability: float = 0.5, note_probability: float = 0.5) -> Genome:
+             mutation_probability: float = 0.5, note_probability: float = 0.8) -> Genome:
     """
     mutates a given genome
 
