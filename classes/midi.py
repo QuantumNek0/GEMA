@@ -39,12 +39,19 @@ class MIDI:
         self.m.close()
         self.s.shutdown()
 
+    def close(self):
+        self.__del__()
+
     def add_name(self, name: str, track: int = 0):
         self.m.addTrackName(track, 0, name)
 
     def add_tempo(self, bpm: int, track: int = 0):
         self.bpm = bpm
         self.m.addTempo(track, 0, bpm)
+
+    def add_track(self):
+        self.m.add_track()
+        self.melody += [{"notes": [], "duration": [], "beat": []}]
 
     def add_note(self,
                  note: int, duration: float = 1,
@@ -103,6 +110,52 @@ class MIDI:
         for note in chord:
             self.m.addNote(track, channel, note, self.melody[track]["beat"][-1], duration, volume)
 
+    def read_midi(self, path: str):
+        """
+
+        reads a midi file and extracts it's values to fit the class and stores them inside the MIDI object
+
+        :param path: the path where the midi file is located
+
+        Note: this only works when 'single_notes' is set to True
+
+        """
+
+        if not self.single_notes:
+            raise Exception("Currently there's no support for multi-note reading.")
+
+        m = MidiFile(path)
+
+        # time_unit represents how many ticks equal a '1' in duration
+        time_unit = m.ticks_per_beat
+        for _ in range(len(m.tracks) - 1): self.add_track()
+
+        for i, t in enumerate(m.tracks):
+            duration_in_ticks = 0
+            is_playing = False
+
+            for msg in t:
+
+                # This way we can avoid all the meta messages at the beginning
+                if is_playing:
+
+                    # in case any other messages get in the way while the track is sending notes, i.e tempo/key changes
+                    duration_in_ticks += msg.time
+
+                if msg.type == "note_on":
+                    is_playing = True
+
+                    # this means there was a rest between this note and the last note_off event
+                    if duration_in_ticks != 0:
+
+                        self.add_note(-1, duration_in_ticks / time_unit, track=i)
+                        duration_in_ticks = 0
+
+                elif msg.type == "note_off":
+
+                    self.add_note(msg.note, duration_in_ticks / time_unit, track=i)
+                    duration_in_ticks = 0
+
     def write_midi(self, name: str = "output", path: str = "", mode: str = "wb"):
         """
 
@@ -133,6 +186,7 @@ class MIDI:
 
         mid = MidiFile("classes/temp/play.mid")
 
+        time.sleep(1.5)
         for message in mid.play():
             self.s.addMidiEvent(*message.bytes())
 
