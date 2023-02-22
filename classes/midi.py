@@ -1,8 +1,4 @@
-from midiutil import MIDIFile
-from mido import MidiFile
-from pyo import *
-
-from collections import namedtuple
+from config import *
 
 
 class MIDI:
@@ -14,7 +10,7 @@ class MIDI:
     :var MIDI.bpm: beats per minute (how fast the midi file will play)
     :var MIDI.melody:
         notes: stores the sequence of midi notes into an array i.e [60, 61] = [C4, C#4]
-        duration: stores the length of the note in beats
+        durations: stores the length of the note in beats
                   i.e [..., 0.5, ...], ''0.5'' is the length of the note at index i (where the ''0.5'' is)
         beat: stores the beat at which the note would be played
               i.e [..., 1, ...], ''1'' is the beat where the note at index i (where the ''1' is) would be played
@@ -24,34 +20,55 @@ class MIDI:
 
     """
 
-    single_notes: bool
-    bpm: int
-
-    def __init__(self, tracks: int = 1, single_notes: bool = False):
+    def __init__(self, name: str = "", tracks: int = 1, bpm: int = 120, single_notes: bool = False, playable: bool = True):
         self.m = MIDIFile(tracks)
         self.single_notes = single_notes
+        self.playable = playable
 
-        self.melody = [{"notes": [], "duration": [], "beat": []} for _ in range(tracks)]
+        self.melody = [{"notes": [], "durations": [], "beat": []} for _ in range(tracks)]
 
-        self.s = Server().boot()
+        for t in range(tracks):
+            self.m.addTempo(t, 0, bpm)  # Adds the message at time = 0
+        self.bpm = bpm
+
+        self.total_duration = 0
+        self.n_tracks = tracks
+
+        self.name = name if name != "" else "untitled"
+
+        if self.playable:
+            self.s = Server().boot()
 
     def __del__(self):
         self.m.close()
-        self.s.shutdown()
+
+        if self.playable:
+            self.s.shutdown()
 
     def close(self):
         self.__del__()
 
-    def add_name(self, name: str, track: int = 0):
-        self.m.addTrackName(track, 0, name)
+    def add_name(self, name: str):
+        self.name = name
 
-    def add_tempo(self, bpm: int, track: int = 0):
+    def add_track_name(self, name: str, track: int = 0):
+        self.m.addTrackName(track, 0, name) # Adds the message at time = 0
+
+    def add_tempo(self, bpm: int):
+        for t in range(self.n_tracks):
+            self.m.addTempo(t, 0, bpm)  # Adds the message at time = 0
         self.bpm = bpm
-        self.m.addTempo(track, 0, bpm)
 
     def add_track(self):
-        self.m.add_track()
-        self.melody += [{"notes": [], "duration": [], "beat": []}]
+        new_m = MIDIFile(self.n_tracks + 1)
+        self.melody += [{"notes": [], "durations": [], "beat": []}]
+
+        for t in range(self.n_tracks):
+            for event in self.m.tracks[t].MIDIEventList:
+                new_m.tracks[t].MIDIEventList.append(event)
+
+        self.m = new_m
+        self.n_tracks += 1
 
     def add_note(self,
                  note: int, duration: float = 1,
@@ -69,17 +86,17 @@ class MIDI:
         :param volume: volume of the given note
 
         """
-
-        self.melody[track]["beat"] += [sum(self.melody[track]["duration"])] if self.single_notes else [on_beat]
+        self.melody[track]["beat"] += [sum(self.melody[track]["durations"])] if self.single_notes else [on_beat]
         # the beat is at where the previous note/chord ended
 
-        self.melody[track]["duration"] += [duration]
+        self.melody[track]["durations"] += [duration]
+        self.total_duration += duration
 
-        if note != rest:
+        if note != MidiValues.rest:
             self.melody[track]["notes"] += [note]
             self.m.addNote(track, channel, note, self.melody[track]["beat"][-1], duration, volume)
         else:
-            self.melody[track]["notes"] += [rest]
+            self.melody[track]["notes"] += [MidiValues.rest]
 
     def add_chord(self,
                   root: int, chord_type: str, duration: float = 1,
@@ -99,23 +116,26 @@ class MIDI:
 
         """
 
-        self.melody[track]["beat"] += [sum(self.melody[track]["duration"])] if self.single_notes else [on_beat]
+        self.melody[track]["beat"] += [sum(self.melody[track]["durations"])] if self.single_notes else [on_beat]
         # the beat is at where the previous note/chord ended
 
         chord = MIDI.chord_from_root(root, chord_type)
 
         self.melody[track]["notes"] += [chord]
-        self.melody[track]["duration"] += [duration]
+        self.melody[track]["durations"] += [duration]
+        self.total_duration += duration
 
         for note in chord:
             self.m.addNote(track, channel, note, self.melody[track]["beat"][-1], duration, volume)
 
-    def read_midi(self, path: str):
+    def read_midi(self, path: str, ignore_first_track: bool = False):
         """
 
         reads a midi file and extracts it's values to fit the class and stores them inside the MIDI object
 
         :param path: the path where the midi file is located
+        :param ignore_first_track: if the midi has a first track with just meta messages, this can be set to True
+                                    and ignore those messages
 
         Note: this only works when 'single_notes' is set to True
 
@@ -126,15 +146,29 @@ class MIDI:
 
         m = MidiFile(path)
 
+        if ignore_first_track:
+            del m.tracks[0]
+
         # time_unit represents how many ticks equal a '1' in duration
         time_unit = m.ticks_per_beat
-        for _ in range(len(m.tracks) - 1): self.add_track()
+
+        for _ in range(len(m.tracks) - 1):
+            self.add_track()
 
         for i, t in enumerate(m.tracks):
             duration_in_ticks = 0
             is_playing = False
 
             for msg in t:
+
+                if msg.type == "key_signature":
+                    print(msg)
+
+                if msg.type == "time_signature":
+                    print(msg)
+
+                if msg.type == "set_tempo" and i == 0:
+                    self.add_tempo(tempo2bpm(msg.tempo))
 
                 # This way we can avoid all the meta messages at the beginning
                 if is_playing:
@@ -156,7 +190,7 @@ class MIDI:
                     self.add_note(msg.note, duration_in_ticks / time_unit, track=i)
                     duration_in_ticks = 0
 
-    def write_midi(self, name: str = "output", path: str = "", mode: str = "wb"):
+    def write_midi(self, name: str = "", path: str = "", mode: str = "wb"):
         """
 
         writes a midi file with the MIDIFile object values
@@ -166,6 +200,8 @@ class MIDI:
         :param mode: how the file is opened
 
         """
+        if name == "":
+            name = self.name
 
         name += ".mid"
         path += "/" if path != "" else ""
@@ -174,6 +210,9 @@ class MIDI:
             self.m.writeFile(out)
 
     def play(self):
+        if not self.playable:
+            raise Exception("Midi object is not playable!")
+
         self.write_midi("play", path="classes/temp")
 
         self.s.start()
@@ -192,24 +231,24 @@ class MIDI:
 
         self.s.stop()
 
-    @staticmethod
-    def metronome(bpm: int):
-        """
-
-        plays a metronome
-
-        :param bpm: beats per minute (how fast the metronome plays)
-
-        """
-
-        met = Metro(time=1 / (bpm / 60.0)).play()
-        t = CosTable([(0, 0), (50, 1), (200, .3), (500, 0)])
-        amp = TrigEnv(met, table=t, dur=.25, mul=1)
-        freq = Iter(met, choice=[660, 440, 440, 440])
-
-        # time.sleep(1) # gives time to load
-
-        return Sine(freq=freq, mul=amp).mix(2).out()
+    # @staticmethod
+    # def metronome(bpm: int):
+    #     """
+    #
+    #     plays a metronome
+    #
+    #     :param bpm: beats per minute (how fast the metronome plays)
+    #
+    #     """
+    #
+    #     met = Metro(time=1 / (bpm / 60.0)).play()
+    #     t = CosTable([(0, 0), (50, 1), (200, .3), (500, 0)])
+    #     amp = TrigEnv(met, table=t, dur=.25, mul=1)
+    #     freq = Iter(met, choice=[660, 440, 440, 440])
+    #
+    #     # time.sleep(1) # gives time to load
+    #
+    #     return Sine(freq=freq, mul=amp).mix(2).out()
 
     @staticmethod
     def chord_from_root(root: int, chord_type: str = "major") -> []:
@@ -249,236 +288,292 @@ class MIDI:
 
 
 # Midi notes
+class MidiValues:
+    """
 
-"""
+    a collection of midi values to be easily referenced based on the note/scale they represent
+    i.e c[4] = 60 = C4
 
-a collection of midi values to be easily referenced based on the note/scale they represent
-i.e c[4] = 60 = C4
+    """
 
-"""
+    # Natural
+    C = [12, 24, 36, 48, 60, 72, 84, 96, 108, 120]
+    D = [14, 26, 38, 50, 62, 74, 86, 98, 110, 122]
+    E = [16, 28, 40, 52, 64, 76, 88, 100, 112, 124]
+    F = [17, 29, 41, 53, 65, 77, 89, 101, 113, 125]
+    G = [19, 31, 43, 55, 67, 79, 91, 103, 115, 127]
+    A = [21, 33, 45, 57, 69, 81, 93, 105, 117]
+    B = [23, 35, 47, 59, 71, 83, 95, 107, 119]
 
-# Natural
+    # Sharp
+    Cs = [13, 25, 37, 49, 61, 73, 85, 97, 109, 121]
+    Ds = [15, 27, 39, 51, 63, 75, 87, 99, 111, 123]
+    Es = F
+    Fs = [18, 30, 42, 54, 66, 78, 90, 102, 114, 126]
+    Gs = [20, 32, 44, 56, 68, 80, 92, 104, 116]
+    As = [22, 34, 46, 58, 70, 82, 94, 106, 118]
+    Bs = [24, 36, 48, 60, 72, 84, 96, 108, 120]
 
-c = [12, 24, 36, 48 , 60, 72, 84, 96, 108, 120]
-d = [14, 26, 38, 50, 62, 74, 86, 98, 110, 122]
-e = [16, 28, 40, 52, 64, 76, 88, 100, 112, 124]
-f = [17, 29, 41, 53, 65, 77, 89, 101, 113, 125]
-g = [19, 31, 43, 55, 67, 79, 91, 103, 115, 127]
-a = [21, 33, 45, 57, 69, 81, 93, 105, 117]
-b = [23, 35, 47, 59, 71, 83, 95, 107, 119]
+    # Flat
+    Cb = [11, 23, 35, 47, 59, 71, 83, 95, 107, 119]
+    Db = Cs
+    Eb = Ds
+    Fb = E
+    Gb = Fs
+    Ab = Gs
+    Bb = As
 
-# Sharp
+    # Rest
+    rest = -1
 
-c_s = [13, 25, 37, 49, 61, 73, 85, 97, 109, 121]
-d_s = [15, 27, 39, 51, 63, 75, 87, 99, 111, 123]
-e_s = f
-f_s = [18, 30, 42, 54, 66, 78, 90, 102, 114, 126]
-g_s = [20, 32, 44, 56, 68, 80, 92, 104, 116]
-a_s = [22, 34, 46, 58, 70, 82, 94, 106, 118]
-b_s = [24, 36, 48, 60, 72, 84, 96, 108, 120]
+    # Music Keys
+    Key = namedtuple("Key", ["name", "values"])
 
-# Flat
-
-c_b = [11, 23, 35, 47, 59, 71, 83, 95, 107, 119]
-d_b = c_s
-e_b = d_s
-f_b = e
-g_b = f_s
-a_b = g_s
-b_b = a_s
-
-# Rest
-
-rest = -1
-
-# Scales
-
-Scale = namedtuple("Scale", ["name", "values"])
-
-scales = { # dictionary of scales
-    "C": {
-        "natural": {
-            "maj": [c, d, e, f, g, a, b],
-            "min": [c, d, e_b, f, g, a_b, b_b]
+    key = { # dictionary of scales
+        "C": {
+            "natural": {
+                "maj": [C, D, E, F, G, A, B],
+                "min": [C, D, Eb, F, G, Ab, Bb]
+            },
+            "#": {
+                "maj": [Cs, Ds, Es, Fs, Gs, As, Bs],
+                "min": [Cs, Ds, E, Fs, Gs, A, B]
+            },
+            "b": {
+                "maj": [Cb, Db, Eb, Fb, Gb, Ab, Bb],
+                "min": [Cb, Db, D, Fb, Gb, G, A]
+            }
         },
-        "sharp": {
-            "maj": [c_s, d_s, e_s, f_s, g_s, a_s, b_s],
-            "min": [c_s, d_s, e, f_s, g_s, a, b]
-        },
-        "flat": {
-            "maj": [c_b, d_b, e_b, f_b, g_b, a_b, b_b],
-            "min": [c_b, d_b, d, f_b, g_b, g, a]
-        }
-    },
 
-    "D": {
-        "natural": {
-            "maj": [d, e, f_s, g, a, b, c_s],
-            "min": [d, e, f, g, a, b_b, c]
+        "D": {
+            "natural": {
+                "maj": [D, E, Fs, G, A, B, Cs],
+                "min": [D, E, F, G, A, Bb, C]
+            },
+            "#": {
+                "maj": [Ds, Es, G, Gs, As, Bs, D],
+                "min": [Ds, Es, Fs, Gs, As, B, Cs]
+            },
+            "b": {
+                "maj": [Db, Eb, F, Gb, Ab, Bb, C],
+                "min": [Db, Eb, Fb, Gb, Ab, A, Cb]
+            }
         },
-        "sharp": {
-            "maj": [d_s, e_s, g, g_s, a_s, b_s, d],
-            "min": [d_s, e_s, f_s, g_s, a_s, b, c_s]
-        },
-        "flat": {
-            "maj": [d_b, e_b, f, g_b, a_b, b_b, c],
-            "min": [d_b, e_b, f_b, g_b, a_b, a, c_b]
-        }
-    },
 
-    "E": {
-        "natural": {
-            "maj": [e, f_s, g_s, a, b, c_s, d_s],
-            "min": [e, f_s, g, a, b, c, d]
+        "E": {
+            "natural": {
+                "maj": [E, Fs, Gs, A, B, Cs, Ds],
+                "min": [E, Fs, G, A, B, C, D]
+            },
+            "#": {
+                "maj": [Es, G, A, As, Bs, D, E],
+                "min": [Es, G, Gs, As, Bs, Cs, Ds]
+            },
+            "b": {
+                "maj": [Eb, F, G, Ab, Bb, C, D],
+                "min": [Eb, F, Gb, Ab, Bb, Cb, Db]
+            }
         },
-        "sharp": {
-            "maj": [e_s, g, a, a_s, b_s, d, e],
-            "min": [e_s, g, g_s, a_s, b_s, c_s, d_s]
-        },
-        "flat": {
-            "maj": [e_b, f, g, a_b, b_b, c, d],
-            "min": [e_b, f, g_b, a_b, b_b, c_b, d_b]
-        }
-    },
 
-    "F": {
-        "natural": {
-            "maj": [f, g, a, b_b, c, d, e],
-            "min": [f, g, a_b, b_b, c, d_b, e_b]
+        "F": {
+            "natural": {
+                "maj": [F, G, A, Bb, C, D, E],
+                "min": [F, G, Ab, Bb, C, Db, Eb]
+            },
+            "#": {
+                "maj": [Fs, Gs, As, B, Cs, Ds, Es],
+                "min": [Fs, Gs, A, B, Cs, D, E]
+            },
+            "b": {
+                "maj": [Fb, Gb, Ab, A, Cb, Db, Eb],
+                "min": [Fb, Gb, G, A, Cb, C, D]
+            }
         },
-        "sharp": {
-            "maj": [f_s, g_s, a_s, b, c_s, d_s, e_s],
-            "min": [f_s, g_s, a, b, c_s, d, e]
-        },
-        "flat": {
-            "maj": [f_b, g_b, a_b, a, c_b, d_b, e_b],
-            "min": [f_b, g_b, g, a, c_b, c, d]
-        }
-    },
 
-    "G": {
-        "natural": {
-            "maj": [g, a, b, c, d, e, f_s],
-            "min": [g, a, b_b, c, d, e_b, f]
+        "G": {
+            "natural": {
+                "maj": [G, A, B, C, D, E, Fs],
+                "min": [G, A, Bb, C, D, Eb, F]
+            },
+            "#": {
+                "maj": [Gs, As, Bs, Cs, Ds, Es, G],
+                "min": [Gs, As, B, Cs, Ds, E, Fs]
+            },
+            "b": {
+                "maj": [Gb, Ab, Bb, Cb, Db, Eb, F],
+                "min": [Gb, Ab, A, Cb, Db, D, Fb]
+            }
         },
-        "sharp": {
-            "maj": [g_s, a_s, b_s, c_s, d_s, e_s, g],
-            "min": [g_s, a_s, b, c_s, d_s, e, f_s]
-        },
-        "flat": {
-            "maj": [g_b, a_b, b_b, c_b, d_b, e_b, f],
-            "min": [g_b, a_b, a, c_b, d_b, d, f_b]
-        }
-    },
 
-    "A": {
-        "natural": {
-            "maj": [a, b, c_s, d, e, f_s, g_s],
-            "min": [a, b, c, d, e, f, g]
+        "A": {
+            "natural": {
+                "maj": [A, B, Cs, D, E, Fs, Gs],
+                "min": [A, B, C, D, E, F, G]
+            },
+            "#": {
+                "maj": [As, Bs, D, Ds, Es, G, A],
+                "min": [As, Bs, Cs, Ds, Es, Fs, Gs]
+            },
+            "b": {
+                "maj": [Ab, Bb, C, Db, Eb, F, G],
+                "min": [Ab, Bb, Cb, Db, Eb, Fb, Gb]
+            }
         },
-        "sharp": {
-            "maj": [a_s, b_s, d, d_s, e_s, g, a],
-            "min": [a_s, b_s, c_s, d_s, e_s, f_s, g_s]
-        },
-        "flat": {
-            "maj": [a_b, b_b, c, d_b, e_b, f, g],
-            "min": [a_b, b_b, c_b, d_b, e_b, f_b, g_b]
-        }
-    },
 
-    "B": {
-        "natural": {
-            "maj": [b, c_s, d_s, e, f_s, g_s, a_s],
-            "min": [b, c_s, d, e, f_s, g, a]
-        },
-        "sharp": {
-            "maj": [b_s, d, e, e_s, g, a, b],
-            "min": [b_s, d, d_s, e_s, g, g_s, a_s]
-        },
-        "flat": {
-            "maj": [b_b, c, d, e_b, f, g, a],
-            "min": [b_b, c, d_b, e_b, f, g_b, a_b]
+        "B": {
+            "natural": {
+                "maj": [B, Cs, Ds, E, Fs, Gs, As],
+                "min": [B, Cs, D, E, Fs, G, A]
+            },
+            "#": {
+                "maj": [Bs, D, E, Es, G, A, B],
+                "min": [Bs, D, Ds, Es, G, Gs, As]
+            },
+            "b": {
+                "maj": [Bb, C, D, Eb, F, G, A],
+                "min": [Bb, C, Db, Eb, F, Gb, Ab]
+            }
         }
     }
-}
 
-Scales = [ # storing scales into an array along with a name for an easy way to show them to the user
-    Scale(
-        "C",
-        [
-            Scale("C major", scales["C"]["natural"]["maj"]),
-            Scale("C minor", scales["C"]["natural"]["min"]),
-            Scale("C# major", scales["C"]["sharp"]["maj"]),
-            Scale("C# minor", scales["C"]["sharp"]["min"]),
-            Scale("Cb major", scales["C"]["flat"]["maj"]),
-            Scale("Cb minor", scales["C"]["flat"]["min"])
-        ]
-    ),
-    Scale(
-        "D",
-        [
-            Scale("D major", scales["D"]["natural"]["maj"]),
-            Scale("D minor", scales["D"]["natural"]["min"]),
-            Scale("D# major", scales["D"]["sharp"]["maj"]),
-            Scale("D# minor", scales["D"]["sharp"]["min"]),
-            Scale("Db major", scales["D"]["flat"]["maj"]),
-            Scale("Db minor", scales["D"]["flat"]["min"])
-        ]
-    ),
-    Scale(
-        "E",
-        [
-            Scale("E major", scales["E"]["natural"]["maj"]),
-            Scale("E minor", scales["E"]["natural"]["min"]),
-            Scale("E# major", scales["E"]["sharp"]["maj"]),
-            Scale("E# minor", scales["E"]["sharp"]["min"]),
-            Scale("Eb major", scales["E"]["flat"]["maj"]),
-            Scale("Eb minor", scales["E"]["flat"]["min"])
-        ]
-    ),
-    Scale(
-        "F",
-        [
-            Scale("F major", scales["F"]["natural"]["maj"]),
-            Scale("F minor", scales["F"]["natural"]["min"]),
-            Scale("F# major", scales["F"]["sharp"]["maj"]),
-            Scale("F# minor", scales["F"]["sharp"]["min"]),
-            Scale("Fb major", scales["F"]["flat"]["maj"]),
-            Scale("Fb minor", scales["F"]["flat"]["min"])
-        ]
-    ),
-    Scale(
-        "G",
-        [
-            Scale("G major", scales["G"]["natural"]["maj"]),
-            Scale("G minor", scales["G"]["natural"]["min"]),
-            Scale("G# major", scales["G"]["sharp"]["maj"]),
-            Scale("G# minor", scales["G"]["sharp"]["min"]),
-            Scale("Gb major", scales["G"]["flat"]["maj"]),
-            Scale("Gb minor", scales["G"]["flat"]["min"])
-        ]
-    ),
-    Scale(
-        "A",
-        [
-            Scale("A major", scales["A"]["natural"]["maj"]),
-            Scale("A minor", scales["A"]["natural"]["min"]),
-            Scale("A# major", scales["A"]["sharp"]["maj"]),
-            Scale("A# minor", scales["A"]["sharp"]["min"]),
-            Scale("Ab major", scales["A"]["flat"]["maj"]),
-            Scale("Ab minor", scales["A"]["flat"]["min"])
-        ]
-    ),
-    Scale(
-        "B",
-        [
-            Scale("B major", scales["B"]["natural"]["maj"]),
-            Scale("B minor", scales["B"]["natural"]["min"]),
-            Scale("B# major", scales["B"]["sharp"]["maj"]),
-            Scale("B# minor", scales["B"]["sharp"]["min"]),
-            Scale("Bb major", scales["B"]["flat"]["maj"]),
-            Scale("Bb minor", scales["B"]["flat"]["min"])
-        ]
-    )
-]
+    alpha_key = {  # dictionary of alphanumeric scales
+        "1": {
+            "A": key["A"]["b"]["min"],
+            "B": key["B"]["natural"]["maj"]
+        },
 
+        "2": {
+            "A": key["E"]["b"]["min"],
+            "B": key["F"]["#"]["maj"]
+        },
+
+        "3": {
+            "A": key["B"]["b"]["min"],
+            "B": key["D"]["b"]["maj"]
+        },
+
+        "4": {
+            "A": key["F"]["natural"]["min"],
+            "B": key["A"]["b"]["maj"]
+        },
+
+        "5": {
+            "A": key["C"]["natural"]["min"],
+            "B": key["E"]["b"]["maj"]
+        },
+
+        "6": {
+            "A": key["G"]["natural"]["min"],
+            "B": key["B"]["b"]["maj"]
+        },
+
+        "7": {
+            "A": key["D"]["natural"]["min"],
+            "B": key["F"]["natural"]["maj"]
+        },
+
+        "8": {
+            "A": key["A"]["natural"]["min"],
+            "B": key["C"]["natural"]["maj"]
+        },
+
+        "9": {
+            "A": key["E"]["natural"]["min"],
+            "B": key["G"]["natural"]["maj"]
+        },
+
+        "10": {
+            "A": key["B"]["natural"]["min"],
+            "B": key["D"]["natural"]["maj"]
+        },
+
+        "11": {
+            "A": key["F"]["#"]["min"],
+            "B": key["A"]["natural"]["maj"]
+        },
+
+        "12": {
+            "A": key["D"]["b"]["min"],
+            "B": key["E"]["natural"]["maj"]
+        },
+    }
+
+    key_names = [ # storing scales into an array along with a name for an easy way to show them to the user
+        Key(
+            "8",
+            [
+                Key("C major", key["C"]["natural"]["maj"]),
+                Key("C minor", key["C"]["natural"]["min"]),
+                Key("C# major", key["C"]["#"]["maj"]),
+                Key("C# minor", key["C"]["#"]["min"]),
+                Key("Cb major", key["C"]["b"]["maj"]),
+                Key("Cb minor", key["C"]["b"]["min"])
+            ]
+        ),
+        Key(
+            "D",
+            [
+                Key("D major", key["D"]["natural"]["maj"]),
+                Key("D minor", key["D"]["natural"]["min"]),
+                Key("D# major", key["D"]["#"]["maj"]),
+                Key("D# minor", key["D"]["#"]["min"]),
+                Key("Db major", key["D"]["b"]["maj"]),
+                Key("Db minor", key["D"]["b"]["min"])
+            ]
+        ),
+        Key(
+            "E",
+            [
+                Key("E major", key["E"]["natural"]["maj"]),
+                Key("E minor", key["E"]["natural"]["min"]),
+                Key("E# major", key["E"]["#"]["maj"]),
+                Key("E# minor", key["E"]["#"]["min"]),
+                Key("Eb major", key["E"]["b"]["maj"]),
+                Key("Eb minor", key["E"]["b"]["min"])
+            ]
+        ),
+        Key(
+            "F",
+            [
+                Key("F major", key["F"]["natural"]["maj"]),
+                Key("F minor", key["F"]["natural"]["min"]),
+                Key("F# major", key["F"]["#"]["maj"]),
+                Key("F# minor", key["F"]["#"]["min"]),
+                Key("Fb major", key["F"]["b"]["maj"]),
+                Key("Fb minor", key["F"]["b"]["min"])
+            ]
+        ),
+        Key(
+            "G",
+            [
+                Key("G major", key["G"]["natural"]["maj"]),
+                Key("G minor", key["G"]["natural"]["min"]),
+                Key("G# major", key["G"]["#"]["maj"]),
+                Key("G# minor", key["G"]["#"]["min"]),
+                Key("Gb major", key["G"]["b"]["maj"]),
+                Key("Gb minor", key["G"]["b"]["min"])
+            ]
+        ),
+        Key(
+            "A",
+            [
+                Key("A major", key["A"]["natural"]["maj"]),
+                Key("A minor", key["A"]["natural"]["min"]),
+                Key("A# major", key["A"]["#"]["maj"]),
+                Key("A# minor", key["A"]["#"]["min"]),
+                Key("Ab major", key["A"]["b"]["maj"]),
+                Key("Ab minor", key["A"]["b"]["min"])
+            ]
+        ),
+        Key(
+            "B",
+            [
+                Key("B major", key["B"]["natural"]["maj"]),
+                Key("B minor", key["B"]["natural"]["min"]),
+                Key("B# major", key["B"]["#"]["maj"]),
+                Key("B# minor", key["B"]["#"]["min"]),
+                Key("Bb major", key["B"]["b"]["maj"]),
+                Key("Bb minor", key["B"]["b"]["min"])
+            ]
+        )
+    ]

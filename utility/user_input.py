@@ -1,5 +1,16 @@
-import time
-from utility.terminal import DEFAULT_SLEEP_SECS, clear_screen
+from config import *
+
+
+def clear_screen():
+    """
+    Clears the screen of the terminal
+    """
+
+    if os.name == 'nt': # windows
+        _ = os.system('cls')
+
+    else: # mac and linux
+        _ = os.system('clear')
 
 
 def confirmation(prompt: str) -> bool:
@@ -66,3 +77,12 @@ def are_all_positives(numbers: [], can_be_zero: bool = True) -> bool:
             if number <= 0: return False
 
     return True
+
+
+def alphanumeric_split(alphanum: str) -> (str, str):
+    import re
+
+    numeric_part = ''.join(re.findall(r'\d+', alphanum))
+    non_numeric_part = ''.join(re.findall(r'\D+', alphanum))
+
+    return numeric_part, non_numeric_part

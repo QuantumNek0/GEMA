@@ -1,26 +1,52 @@
-from functools import partial
+from config import *
 
 from algorithm.genetic import *
-from utility.terminal import *
 from utility.user_input import *
 
+
+# Global variables
+population_size = int
+bits_per_note = int
+output_size = int
+
+time_signature = TIME_SIGNATURE
+notes_per_bar = int
+unit_note = int
+no_bars = int
+bpm = int
+
+
+def set_defaults():
+    global bits_per_note, population_size, output_size
+    global time_signature, unit_note, no_bars, bpm, notes_per_bar
+
+    bits_per_note = DEFAULT_BITS_PER_NOTE  # Deviation
+    population_size = DEFAULT_POPULATION_SIZE
+    output_size = DEFAULT_OUTPUT_SIZE
+
+    time_signature = DEFAULT_TIME_SIGNATURE
+    unit_note = DEFAULT_UNIT_NOTE
+    no_bars = DEFAULT_NO_BARS
+    bpm = DEFAULT_BPM
+
+    notes_per_bar = ((1 / time_signature.beat_note) / (1 / unit_note)) * time_signature.beats_per_bar
+
+
 def main():
+    global bits_per_note, population_size, output_size
+    global time_signature, unit_note, no_bars, bpm, notes_per_bar
 
     continue_evolution = True
-
     clear_screen() # clears the pyo prompt
+
     while continue_evolution:
         valid_parameters = False
 
+        key_root, key_type = (0, 0)
+        set_defaults()
+
         while not valid_parameters:
             # default values
-            bits_per_note = 4  # Deviation
-            population_size = 5
-            output_size = 3
-
-            notes_per_bar = 16
-            no_bars = 4
-            bpm = 128
 
             if not confirmation("Use default values?"):
 
@@ -35,14 +61,14 @@ def main():
 
             clear_screen()
 
-            if not confirmation("randomize scale?"):
-                scale_root = select_option((s.name for s in Scales), "Root of scale")
-                scale_type = select_option((s.name for s in Scales[scale_root].values), "Scale type")
+            if not confirmation("randomize key?"):
+                key_root = select_option((s.name for s in MidiValues.key_names), "Root of scale")
+                key_type = select_option((s.name for s in MidiValues.key_names[key_root].values), "Scale type")
             else:
-                scale_root = randrange(0, len(Scales))
-                scale_type = randrange(0, len(Scales[scale_root].values))
+                key_root = randrange(0, len(MidiValues.key_names))
+                key_type = randrange(0, len(MidiValues.key_names[key_root].values))
 
-            if not (are_all_positives([bits_per_note, population_size, output_size,notes_per_bar, no_bars, bpm], can_be_zero=False) \
+            if not (are_all_positives([bits_per_note, population_size, output_size, notes_per_bar, no_bars, bpm], can_be_zero=False) \
                     and output_size <= population_size):
 
                 print("\nInvalid options!")
@@ -53,8 +79,8 @@ def main():
 
             clear_screen()
 
-        note_length = 4 / notes_per_bar  # the 4 represents the 4 beats in a single bar (time signature = 4/4)
-        scale = Scales[scale_root].values[scale_type].values
+        note_length = DEFAULT_TIME_SIGNATURE.BEATS_PER_BAR / notes_per_bar
+        key = MidiValues.key_names[key_root].values[key_type].values
 
         population, number_generations = run_evolution(
             populate_func=partial(
@@ -66,7 +92,7 @@ def main():
             ),
             fitness_func=partial(
                 fitness,
-                scale=scale,
+                key=key,
                 note_length=note_length,
                 bpm=bpm
             )
@@ -76,7 +102,7 @@ def main():
         for i in range(output_size):
             melody = population[i]
 
-            mid = genome_to_midi(melody, scale, note_length)
+            mid = genome_to_midi(melody, key, note_length)
             mid.add_tempo(bpm)
             mid.write_midi("melody" + str((i + 1)), path="out")
 
