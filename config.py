@@ -1,11 +1,15 @@
 # Imports and global variables
-from midiutil import MIDIFile
+from midiutil import *
 from mido import MidiFile, tempo2bpm
 from pyo import *
+
+import torch
+import torch.nn as nn
 
 from typing import List, Callable, Tuple, NamedTuple
 from collections import namedtuple
 from functools import partial
+import copy
 
 import os
 from random import *

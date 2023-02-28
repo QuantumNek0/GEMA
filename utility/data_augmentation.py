@@ -40,7 +40,9 @@ class AugmentedMidi(MIDI):
         if not self.single_notes:
             raise Exception("Currently there's no support for multi-note normalization.")
 
-        aux_mid = type(self)(self.name, self.n_tracks, self.bpm, self.single_notes, self.playable)
+        aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
+        aux_mid.add_tempo(self.bpm)
+        aux_mid.add_key(self.key)
 
         for t, track in enumerate(self.melody):
 
@@ -77,7 +79,9 @@ class AugmentedMidi(MIDI):
         if not self.single_notes:
             raise Exception("Currently there's no support for multi-note smoothing.")
 
-        aux_mid = type(self)(self.name, self.n_tracks, self.bpm, self.single_notes, self.playable)
+        aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
+        aux_mid.add_tempo(self.bpm)
+        aux_mid.add_key(self.key)
 
         for t, track in enumerate(self.melody):
 
@@ -118,7 +122,9 @@ class AugmentedMidi(MIDI):
         from random import randrange
         from statistics import median
 
-        aux_mid = type(self)(self.name, self.n_tracks, self.bpm, self.single_notes, self.playable)
+        aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
+        aux_mid.add_tempo(self.bpm)
+        aux_mid.add_key(self.key)
 
         scale = continuous(scale, return_sorted=True)  # gets rid of the separations between notes
 
@@ -143,7 +149,8 @@ class AugmentedMidi(MIDI):
         return aux_mid
 
     def transpose(self, semitones: int):
-        aux_mid = type(self)(self.name, self.n_tracks, self.bpm, self.single_notes, self.playable)
+        aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
+        aux_mid.add_tempo(self.bpm)
 
         for t, track in enumerate(self.melody):
 
@@ -160,7 +167,9 @@ class AugmentedMidi(MIDI):
         return aux_mid
 
     def flip(self):
-        aux_mid = type(self)(self.name, self.n_tracks, self.bpm, self.single_notes, self.playable)
+        aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
+        aux_mid.add_tempo(self.bpm)
+        aux_mid.add_key(self.key)
 
         for t, track in enumerate(self.melody):
 
@@ -178,21 +187,22 @@ class AugmentedMidi(MIDI):
 
 def write_transpositions(path: str):
     midi_data = extract_midi_data(path)
-    k = alpha_key[midi_data.key]  # Original key
+    k = alpha_maj_keys[midi_data.key]  # Original key
     original_key = k
 
     is_descending = False
 
     for i in range(NO_MAJ_KEYS):  # Ignoring minor relatives
         mid = AugmentedMidi(single_notes=True, playable=False)
-        mid.read_midi(path)
+        mid.read_midi(path, ignore_meta=True)
+        mid.add_tempo(midi_data.bpm)
 
         if i <= NO_MAJ_KEYS / 2:  # Transposing the melody up to +6 semitones up
             mid = mid.transpose(+i)
             if i != 0:
                 k += 1
 
-        else:  # Transposing the melody up to -5 semitones down
+        else:  # Transposing the melody down to -5 semitones down
             if not is_descending:
                 k = original_key
                 is_descending = True
@@ -205,31 +215,32 @@ def write_transpositions(path: str):
         elif k < 1:
             k = 12
 
-        key_root, key_type = alphanumeric_split(find_in_dict(alpha_key, k))
+        key_root, key_type = alphanumeric_split(find_in_dict(alpha_maj_keys, k))
+        key_signature = find_in_dict(short_maj_keys, k)
 
-        # print(f"transposing to {key_root}A: {midi_data.artist}_{midi_data.song}")
-        mid.write_midi(f"{midi_data.artist}_{midi_data.song}-{key_root}A_{midi_data.bpm}",
-                       path=f"../classes/data/augmented_data/transpositions/A/{key_root}")
+        relative_mid = copy.deepcopy(mid)
 
-        # print(f"transposing to {key_root}B: {midi_data.artist}_{midi_data.song}")
+        mid.add_key(key_signature)
         mid.write_midi(f"{midi_data.artist}_{midi_data.song}-{key_root}B_{midi_data.bpm}",
                        path=f"../classes/data/augmented_data/transpositions/B/{key_root}")
+
+        relative_mid.add_key(relative_min_key[key_signature])
+        relative_mid.write_midi(f"{midi_data.artist}_{midi_data.song}-{key_root}A_{midi_data.bpm}",
+                       path=f"../classes/data/augmented_data/transpositions/A/{key_root}")
 
 
 def write_variations(path: str, n: int = DEFAULT_N_NOISE_MELODIES):
     midi_data = extract_midi_data(path)
-    k = alpha_key[midi_data.key]  # Original key
-
     key_root, key_type = alphanumeric_split(midi_data.key)
 
     for i in range(n):
 
         m = AugmentedMidi(single_notes=True, playable=False)
         m.read_midi(path, ignore_first_track=True)
+        m.add_tempo(midi_data.bpm)
+        m.add_key(alpha_to_short_key[midi_data.key])
 
         m.add_name(f"{midi_data.artist}_{midi_data.song}-{key_root}{key_type}_{midi_data.bpm}-{i}")
-        # m.add_tempo(midi_data.bpm)
-
         m = m.normalize()
 
         while m.total_duration < 16:
@@ -280,6 +291,9 @@ def main():
 
                 m = AugmentedMidi(single_notes=True, playable=False)
                 m.read_midi(path, ignore_first_track=True)
+                m.add_tempo(midi_data.bpm)
+                m.add_key(alpha_to_short_key[midi_data.key])
+
                 m.add_name(f"{midi_data.artist}_{midi_data.song}-{key_root}{key_type}_{midi_data.bpm}-{i}_flipped")
 
                 m_flipped = m.flip()
@@ -297,8 +311,11 @@ def main():
 
                     m = AugmentedMidi(single_notes=True, playable=False)
                     m.read_midi(path, ignore_first_track=True)
+                    m.add_tempo(midi_data.bpm)
+                    m.add_key(alpha_to_short_key[midi_data.key])
 
                     m.add_name(f"{midi_data.artist}_{midi_data.song}-{key_root}{key_type}_{midi_data.bpm}_flipped")
+
                     m_flipped = m.flip()
                     m_flipped.write_midi(path="../classes/data/augmented_data/flipped_data")
 

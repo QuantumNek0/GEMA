@@ -1,4 +1,5 @@
 from config import *
+from utility.music import short_key_to_accidentals
 
 
 class MIDI:
@@ -20,21 +21,19 @@ class MIDI:
 
     """
 
-    def __init__(self, name: str = "", tracks: int = 1, bpm: int = 120, single_notes: bool = False, playable: bool = True):
-        self.m = MIDIFile(tracks)
+    bpm: int
+    key: str
+
+    def __init__(self, name: str = "", tracks: int = 1, single_notes: bool = False, playable: bool = True):
+        self.m = MIDIFile(tracks) # MIDIUtil object
         self.single_notes = single_notes
         self.playable = playable
 
+        self.name = name if name != "" else "untitled"
+
         self.melody = [{"notes": [], "durations": [], "beat": []} for _ in range(tracks)]
-
-        for t in range(tracks):
-            self.m.addTempo(t, 0, bpm)  # Adds the message at time = 0
-        self.bpm = bpm
-
         self.total_duration = 0
         self.n_tracks = tracks
-
-        self.name = name if name != "" else "untitled"
 
         if self.playable:
             self.s = Server().boot()
@@ -55,9 +54,16 @@ class MIDI:
         self.m.addTrackName(track, 0, name) # Adds the message at time = 0
 
     def add_tempo(self, bpm: int):
-        for t in range(self.n_tracks):
-            self.m.addTempo(t, 0, bpm)  # Adds the message at time = 0
+        for track in range(self.n_tracks):
+
+            self.m.addTempo(track, 0, bpm)  # Adds the message at time = 0
         self.bpm = bpm
+
+    def add_key(self, key: str):
+        for track in range(self.n_tracks):
+
+            self.m.addKeySignature(track, 0, *short_key_to_accidentals[key]) # Adds the message at time = 0
+        self.key = key
 
     def add_track(self):
         new_m = MIDIFile(self.n_tracks + 1)
@@ -128,7 +134,7 @@ class MIDI:
         for note in chord:
             self.m.addNote(track, channel, note, self.melody[track]["beat"][-1], duration, volume)
 
-    def read_midi(self, path: str, ignore_first_track: bool = False):
+    def read_midi(self, path: str, ignore_first_track: bool = False, ignore_meta: bool = False):
         """
 
         reads a midi file and extracts it's values to fit the class and stores them inside the MIDI object
@@ -136,6 +142,7 @@ class MIDI:
         :param path: the path where the midi file is located
         :param ignore_first_track: if the midi has a first track with just meta messages, this can be set to True
                                     and ignore those messages
+        :param ignore_meta: if the midi has meta messages, they will be ignored
 
         Note: this only works when 'single_notes' is set to True
 
@@ -144,7 +151,7 @@ class MIDI:
         if not self.single_notes:
             raise Exception("Currently there's no support for multi-note reading.")
 
-        m = MidiFile(path)
+        m = MidiFile(path) # mido object
 
         if ignore_first_track:
             del m.tracks[0]
@@ -160,15 +167,14 @@ class MIDI:
             is_playing = False
 
             for msg in t:
+                # print(msg)
 
-                if msg.type == "key_signature":
-                    print(msg)
+                if not ignore_meta:
+                    if msg.type == "key_signature" and i == 0:  # only first track
+                        self.add_key(msg.key)
 
-                if msg.type == "time_signature":
-                    print(msg)
-
-                if msg.type == "set_tempo" and i == 0:
-                    self.add_tempo(tempo2bpm(msg.tempo))
+                    if msg.type == "set_tempo" and i == 0:
+                        self.add_tempo(tempo2bpm(msg.tempo))
 
                 # This way we can avoid all the meta messages at the beginning
                 if is_playing:
@@ -231,25 +237,6 @@ class MIDI:
 
         self.s.stop()
 
-    # @staticmethod
-    # def metronome(bpm: int):
-    #     """
-    #
-    #     plays a metronome
-    #
-    #     :param bpm: beats per minute (how fast the metronome plays)
-    #
-    #     """
-    #
-    #     met = Metro(time=1 / (bpm / 60.0)).play()
-    #     t = CosTable([(0, 0), (50, 1), (200, .3), (500, 0)])
-    #     amp = TrigEnv(met, table=t, dur=.25, mul=1)
-    #     freq = Iter(met, choice=[660, 440, 440, 440])
-    #
-    #     # time.sleep(1) # gives time to load
-    #
-    #     return Sine(freq=freq, mul=amp).mix(2).out()
-
     @staticmethod
     def chord_from_root(root: int, chord_type: str = "major") -> []:
         """
@@ -272,19 +259,6 @@ class MIDI:
 
         elif chord_type == "diminished" or chord_type == "dim":
             return [root, root + 3, root + 6]
-
-    @staticmethod
-    def beats_to_secs(no_beats: float, bpm: int) -> float:
-        """
-
-        returns the the length of the beats in seconds
-
-        :param no_beats: number of beats
-        :param bpm: the bpm at which the beats are in
-
-        """
-
-        return (60/bpm) * no_beats
 
 
 # Midi notes
@@ -500,7 +474,7 @@ class MidiValues:
 
     key_names = [ # storing scales into an array along with a name for an easy way to show them to the user
         Key(
-            "8",
+            "C",
             [
                 Key("C major", key["C"]["natural"]["maj"]),
                 Key("C minor", key["C"]["natural"]["min"]),

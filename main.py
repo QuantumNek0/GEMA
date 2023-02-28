@@ -79,7 +79,7 @@ def main():
 
             clear_screen()
 
-        note_length = DEFAULT_TIME_SIGNATURE.BEATS_PER_BAR / notes_per_bar
+        note_length = time_signature.beats_per_bar / notes_per_bar
         key = MidiValues.key_names[key_root].values[key_type].values
 
         population, number_generations = run_evolution(
@@ -108,7 +108,7 @@ def main():
 
         clear_screen()  # clears pyo prompt
 
-        print("\nhighest rated melodies stored in midi file!")
+        print("\nhighest rated melodies stored in midi files!")
         time.sleep(DEFAULT_SLEEP_SECS)
 
         clear_screen()
