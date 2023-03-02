@@ -1,20 +1,24 @@
 # Imports and global variables
+import os
+import time
+from random import *
+from tqdm import tqdm
+
 from midiutil import *
 from mido import MidiFile, tempo2bpm
 from pyo import *
 
-import torch
-import torch.nn as nn
-
 from typing import List, Callable, Tuple, NamedTuple
 from collections import namedtuple
 from functools import partial
+import numpy as np
 import copy
 
-import os
-from random import *
-from tqdm import tqdm
-import time
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torch.utils.data as torch_data
 
 # Music constants
 TIME_SIGNATURE = namedtuple("TIME_SIGNATURE", ["beats_per_bar", "beat_note"])
@@ -36,6 +40,12 @@ DEFAULT_BPM = 128
 DEFAULT_GENERATION_LIMIT = 100
 DEFAULT_POPULATION_SIZE = 5
 DEFAULT_NOTE_PROBABILITY = 0.45
+
+# Defaults for autoencoder
+DEFAULT_INPUT_SIZE = 64  # Size of midi melodies
+DEFAULT_HIDDEN_SIZE = 32  # Number of hidden units in VAE
+DEFAULT_LATENT_SIZE = 16 # Dimension of the latent space
+DEFAULT_NO_EPOCHS = 20
 
 # Misc defaults
 DEFAULT_SLEEP_SECS = 5

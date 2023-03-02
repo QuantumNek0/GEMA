@@ -70,8 +70,8 @@ class MIDI:
         self.melody += [{"notes": [], "durations": [], "beat": []}]
 
         for t in range(self.n_tracks):
-            for event in self.m.tracks[t].MIDIEventList:
-                new_m.tracks[t].MIDIEventList.append(event)
+            for event in self.m.tracks[t].eventList:
+                new_m.tracks[t].eventList.append(event)
 
         self.m = new_m
         self.n_tracks += 1
@@ -174,7 +174,7 @@ class MIDI:
                         self.add_key(msg.key)
 
                     if msg.type == "set_tempo" and i == 0:
-                        self.add_tempo(tempo2bpm(msg.tempo))
+                        self.add_tempo(round(tempo2bpm(msg.tempo)))
 
                 # This way we can avoid all the meta messages at the beginning
                 if is_playing:
