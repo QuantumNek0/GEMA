@@ -258,6 +258,9 @@ def main():
     variations = True
     flip = True
 
+    directory = "../classes/data/original_data"
+    n_originals = len(os.listdir(directory))
+
     if trans:
         directory = "../classes/data/original_data"
 
@@ -269,7 +272,7 @@ def main():
     if variations:
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), desc="adding noise", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), total=DEFAULT_N_VARIATIONS*NO_KEYS*n_originals, desc="adding noise", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
 
@@ -301,7 +304,7 @@ def main():
 
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), desc="flipping", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), total=NO_KEYS*n_originals, desc="flipping", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
                     path = os.path.join(root, file)

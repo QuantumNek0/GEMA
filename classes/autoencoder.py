@@ -2,7 +2,6 @@ from config import *
 from utility.data_augmentation import AugmentedMidi
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# device = 'cpu'
 
 short_key_encoding = {
     "Abm": 10,
@@ -32,81 +31,6 @@ short_key_encoding = {
 }
 
 
-class VariationalEncoder(nn.Module):
-    def __init__(self, latent_dims):
-        super(VariationalEncoder, self).__init__()
-        self.linear1 = nn.Linear(DEFAULT_INPUT_SIZE, DEFAULT_HIDDEN_SIZE)
-        self.linear2 = nn.Linear(DEFAULT_HIDDEN_SIZE, latent_dims)
-        self.linear3 = nn.Linear(DEFAULT_HIDDEN_SIZE, latent_dims)
-
-        self.N = torch.distributions.Normal(0, 1)
-        if device == "cuda":
-            self.N.loc = self.N.loc.cuda() # hack to get sampling on the GPU
-            self.N.scale = self.N.scale.cuda()
-        self.kl = 0
-
-    def forward(self, x):
-        x = F.relu(self.linear1(x))
-        mu = self.linear2(x)
-        sigma = torch.exp(self.linear3(x))
-        z = mu + sigma*self.N.sample(mu.shape)
-        self.kl = (sigma**2 + mu**2 - torch.log(sigma) - 1/2).sum()
-        return z
-
-
-class Decoder(nn.Module):
-    def __init__(self, latent_dims):
-        super(Decoder, self).__init__()
-        self.linear1 = nn.Linear(latent_dims, DEFAULT_HIDDEN_SIZE)
-        self.linear2 = nn.Linear(DEFAULT_HIDDEN_SIZE, DEFAULT_INPUT_SIZE)
-
-    def forward(self, z):
-        z = F.relu(self.linear1(z))
-        z = torch.sigmoid(self.linear2(z))
-        return z
-
-
-class VariationalAutoencoder(nn.Module):
-
-    def __init__(self, latent_dims):
-        super(VariationalAutoencoder, self).__init__()
-        self.encoder = VariationalEncoder(latent_dims)
-        self.decoder = Decoder(latent_dims)
-
-    def forward(self, x):
-        z = self.encoder(x)
-        return self.decoder(z)
-
-
-def train(autoencoder: VariationalAutoencoder, data, epochs: int):
-    opt = torch.optim.Adam(autoencoder.parameters())
-    for epoch in range(epochs):
-        epoch_loss = 0.0
-
-        if epoch != 0:
-          print("\n")
-        print(f"epoch: {epoch + 1}/{epochs}")
-
-        i = 0
-        len_data = len(data)
-        for x, y in data:
-            x = x.to(device) # GPU
-            opt.zero_grad()
-            x_hat = autoencoder(x)
-
-            loss = ((x - x_hat)**2).sum() + autoencoder.encoder.kl
-            loss.backward()
-            opt.step()
-            epoch_loss += loss.item()
-
-            i = i + 1
-            print(f"\r{'{:.2f}'.format(i*100 / len_data)}%", end='')
-
-        epoch_loss = epoch_loss / len_data
-        print(f", loss = {'{:.6f}'.format(epoch_loss)}", end='')
-    return autoencoder
-
-
 class MidiDataset(torch_data.Dataset):
     def __init__(self, data_dir):
         self.data_dir = data_dir
@@ -123,13 +47,6 @@ class MidiDataset(torch_data.Dataset):
     def __getitem__(self, index):
         file_path, class_idx = self.files[index]
 
-        # midi_data = pretty_midi.PrettyMIDI(file_path)
-        # piano_roll = midi_data.get_piano_roll(fs=20)
-        # piano_roll = np.transpose(piano_roll, (1, 0))
-        # piano_roll = np.expand_dims(piano_roll, axis=0)
-        # piano_roll = torch.tensor(piano_roll, dtype=torch.float32)
-        # return piano_roll, class_idx
-
         m = AugmentedMidi(single_notes=True, playable=False)
         m.read_midi(file_path)
         m = m.normalize()
@@ -137,28 +54,194 @@ class MidiDataset(torch_data.Dataset):
         while sum(m.melody[1]["durations"]) < 16:
             m.add_padding(1, track=1)
 
-        notes = [note / 127 for note in m.melody[1]["notes"]]
+        notes = [note / N_MIDI_VALUES for note in m.melody[1]["notes"]]
         # notes = np.expand_dims(notes, axis=0)
-        notes = torch.tensor(notes, dtype=torch.float32)
 
+        notes = torch.tensor(notes, dtype=torch.float32)
         return notes, short_key_encoding[m.key]
 
     def __len__(self):
         return len(self.files)
 
 
+class VariationalEncoder(nn.Module):
+    def __init__(self, latent_dims):
+        super(VariationalEncoder, self).__init__()
+
+        self.activation = DEFAULT_ACTIVATION
+
+        self.linear1 = nn.Linear(DEFAULT_INPUT_SIZE, DEFAULT_HIDDEN1_SIZE)
+        self.linear2 = nn.Linear(DEFAULT_HIDDEN1_SIZE, DEFAULT_HIDDEN2_SIZE)
+        self.linear3 = nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN3_SIZE)
+        self.linear4 = nn.Linear(DEFAULT_HIDDEN3_SIZE, latent_dims)
+        self.linear5 = nn.Linear(DEFAULT_HIDDEN3_SIZE, latent_dims)
+
+        self.batch1 = nn.BatchNorm1d(DEFAULT_HIDDEN1_SIZE)
+        self.batch2 = nn.BatchNorm1d(DEFAULT_HIDDEN2_SIZE)
+        self.batch3 = nn.BatchNorm1d(DEFAULT_HIDDEN3_SIZE)
+
+        self.N = torch.distributions.Normal(0, 1)
+        self.kl = 0
+
+        self.apply(self._init_weights)
+
+        if device == "cuda":
+            self.N.loc = self.N.loc.cuda()  # hack to get sampling on the GPU
+            self.N.scale = self.N.scale.cuda()
+
+    def forward(self, x):
+        x = x.to(device)
+        x = F.relu(self.batch1(self.linear1(x)))
+        x = F.relu(self.batch2(self.linear2(x)))
+        x = F.relu(self.batch3(self.linear3(x)))
+
+        mu = self.linear4(x)
+        sigma = torch.exp(self.linear5(x))
+
+        # reparameterization
+        z = mu + sigma * self.N.sample(mu.shape)
+        self.kl = (sigma ** 2 + mu ** 2 - torch.log(sigma) - 1 / 2).sum()
+
+        return z
+
+    @staticmethod
+    def _init_weights(module):
+        class_name = module.__class__.__name__
+
+        if class_name.find('Linear') != -1:
+            n = module.in_features
+            y = 1.0 / np.sqrt(n)
+
+            module.weight.data.uniform_(-y, y)
+            module.bias.data.fill_(0)
+
+
+class Decoder(nn.Module):
+    def __init__(self, latent_dims):
+        super(Decoder, self).__init__()
+
+        self.activation = DEFAULT_ACTIVATION
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dims, DEFAULT_HIDDEN3_SIZE),
+            nn.BatchNorm1d(DEFAULT_HIDDEN3_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN3_SIZE, DEFAULT_HIDDEN2_SIZE),
+            nn.BatchNorm1d(DEFAULT_HIDDEN2_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN1_SIZE),
+            nn.BatchNorm1d(DEFAULT_HIDDEN1_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN1_SIZE, DEFAULT_INPUT_SIZE),
+            nn.Sigmoid()
+        )
+        self.apply(self._init_weights)
+
+    def forward(self, x):
+        decoded_x = self.decoder(x)
+
+        return decoded_x
+
+    @staticmethod
+    def _init_weights(module):
+        class_name = module.__class__.__name__
+
+        if class_name.find('Linear') != -1:
+            n = module.in_features
+            y = 1.0 / np.sqrt(n)
+
+            module.weight.data.uniform_(-y, y)
+            module.bias.data.fill_(0)
+
+
+class VariationalAutoencoder(nn.Module):
+
+    def __init__(self, latent_dims):
+        super(VariationalAutoencoder, self).__init__()
+        self.encoder = VariationalEncoder(latent_dims)
+        self.decoder = Decoder(latent_dims)
+
+    def forward(self, x):
+        x = x.to(device)
+        encoded_x = self.encoder(x)
+
+        return self.decoder(encoded_x)
+
+    # @staticmethod
+    # def reparameterize(mu, log_var):
+    #     std = torch.exp(0.5 * log_var)
+    #     eps = torch.randn_like(std)
+    #
+    #     return mu + eps * std
+
+
+def train(vae: VariationalAutoencoder, dataset, epochs: int):
+    opt = torch.optim.Adam(vae.parameters(), lr=DEFAULT_LEARNING_RATE)
+
+    training_loader = torch_data.DataLoader(dataset, batch_size=DEFAULT_BATCH_SIZE, shuffle=True)
+    validation_loader = torch_data.DataLoader(dataset, batch_size=DEFAULT_BATCH_SIZE, shuffle=False)
+
+    for epoch in range(epochs):
+
+        epoch_loss = train_epoch(vae, training_loader, opt)
+        val_loss = test_epoch(vae, validation_loader)
+
+        print(f"epoch: {epoch+1}/{epochs}, epoch loss = {epoch_loss}\tval loss = {val_loss}\n")
+        time.sleep(0.1)
+
+    return vae
+
+
+def train_epoch(vae: VariationalAutoencoder, data, opt):
+    # Set train mode for both the encoder and the decoder
+    vae.train()
+    epoch_loss = 0.0
+
+    for x, _ in tqdm(data, desc="training epoch", unit="batch"):
+
+        x = x.to(device)
+        opt.zero_grad()
+
+        x_hat = vae(x)
+        loss = ((x - x_hat) ** 2).sum() + vae.encoder.kl
+
+        loss.backward()
+        opt.step()
+
+        epoch_loss += loss.item()
+
+    return epoch_loss / len(data.dataset)
+
+
+def test_epoch(vae: VariationalAutoencoder, data):
+    # Set evaluation mode for encoder and decoder
+    vae.eval()
+    val_loss = 0.0
+
+    with torch.no_grad(): # No need to track the gradients
+        for x, _ in tqdm(data, desc="testing epoch", unit="batch"):
+
+            x = x.to(device)
+            encoded_x = vae.encoder(x)
+            x_hat = vae(x)
+
+            loss = ((x - x_hat)**2).sum() + vae.encoder.kl
+            val_loss += loss.item()
+
+    return val_loss / len(data.dataset)
+
+
 def main():
     # Hyperparameters
     latent_dims = DEFAULT_LATENT_SIZE
-    no_epochs = DEFAULT_NO_EPOCHS
-
-    vae = VariationalAutoencoder(latent_dims).to(device)  # GPU
+    n_epochs = DEFAULT_N_EPOCHS
 
     midi_dataset = MidiDataset("data/augmented_data")
-    data_loader = torch_data.DataLoader(midi_dataset, batch_size=32, shuffle=True)
 
-    vae = train(vae, data_loader, epochs=no_epochs)
-    vae.eval()
+    vae = VariationalAutoencoder(latent_dims).to(device)  # GPU
+    vae = train(vae, midi_dataset, epochs=n_epochs)
     torch.save(vae.state_dict(), 'music_vae.pt')
 
 
