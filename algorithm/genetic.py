@@ -33,7 +33,7 @@ def gen_rand_note(no_bits: int, note_probability: float = DEFAULT_NOTE_PROBABILI
 
     note = [0] * no_bits
 
-    if random() <= note_probability:
+    if random.random() <= note_probability:
         note[randint(0, no_bits - 1)] = 1
 
     return note
@@ -181,7 +181,7 @@ def mutation(genome: Genome, no_mutations: int = 1,
     for _ in range(no_mutations):
         index = randrange(len(genome))
 
-        if random() <= mutation_probability:
+        if random.random() <= mutation_probability:
             genome[index] = gen_rand_note(len(genome[index]), note_probability)
 
     return genome
@@ -212,7 +212,7 @@ def genome_to_midi(genome: Genome, key: [], note_length: float,
 
             if bit == 1:
                 mid.add_note(
-                    key[root_pos + pitch] if random() <= high_note_prob else key[root_pos - pitch],
+                    key[root_pos + pitch] if random.random() <= high_note_prob else key[root_pos - pitch],
                     note_length
                 )
                 rest_note = False

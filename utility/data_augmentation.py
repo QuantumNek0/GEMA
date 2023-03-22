@@ -108,7 +108,7 @@ class AugmentedMidi(MIDI):
 
         return aux_mid
 
-    def add_padding(self, n: int, padding: int = -1, padding_size: float = DEFAULT_NOTE_DURATION, track: int = 0):
+    def add_padding(self, n: int, padding: int = MidiValues.rest, padding_size: float = DEFAULT_NOTE_DURATION, track: int = 0):
         aux_mid = self
 
         for _ in range(n):
@@ -139,8 +139,8 @@ class AugmentedMidi(MIDI):
                 index = randrange(len(note))
                 rand_note = randrange(scale[root_pos - midi_range], scale[root_pos + midi_range])
 
-                while random() <= variation_probability and index <= len(note) - 1:
-                    note[index] = rand_note if random() <= note_probability else -1
+                while random.random() <= variation_probability and index <= len(note) - 1:
+                    note[index] = rand_note if random.random() <= note_probability else MidiValues.rest
                     index = index + 1
 
             for n, dur in zip(note, duration):
@@ -159,7 +159,7 @@ class AugmentedMidi(MIDI):
 
             for note, duration in zip(notes, durations):
 
-                if note != -1:
+                if note != MidiValues.rest:
                     aux_mid.add_note(note + semitones, duration, track=t)
                 else:
                     aux_mid.add_note(note, duration, track=t)
@@ -187,7 +187,7 @@ class AugmentedMidi(MIDI):
 
 def write_transpositions(path: str):
     midi_data = extract_midi_data(path)
-    k = alpha_maj_keys[midi_data.key]  # Original key
+    k = alpha_keys[midi_data.key]  # Original key
     original_key = k
 
     is_descending = False
@@ -215,7 +215,7 @@ def write_transpositions(path: str):
         elif k < 1:
             k = 12
 
-        key_root, key_type = alphanumeric_split(find_in_dict(alpha_maj_keys, k))
+        key_root, key_type = alphanumeric_split(find_in_dict(alpha_keys, k))
         key_signature = find_in_dict(short_maj_keys, k)
 
         relative_mid = copy.deepcopy(mid)
@@ -272,7 +272,7 @@ def main():
     if variations:
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), total=DEFAULT_N_VARIATIONS*NO_KEYS*n_originals, desc="adding noise", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), total=27, desc="adding noise", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
 
@@ -304,7 +304,7 @@ def main():
 
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), total=NO_KEYS*n_originals, desc="flipping", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), total=27, desc="flipping", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
                     path = os.path.join(root, file)

@@ -48,11 +48,11 @@ DEFAULT_INPUT_SIZE = 64  # Size of midi melodies
 DEFAULT_HIDDEN1_SIZE = 32  # Number of hidden units in VAE
 DEFAULT_HIDDEN2_SIZE = 16  # Number of hidden units in VAE
 DEFAULT_HIDDEN3_SIZE = 8  # Number of hidden units in VAE
-DEFAULT_LATENT_SIZE = 4 # Dimensions of the latent space
+DEFAULT_LATENT_SIZE = 2 # Dimensions of the latent space
 DEFAULT_ACTIVATION = nn.ReLU()
 DEFAULT_CRITERION = nn.MSELoss()
 DEFAULT_LEARNING_RATE = 1e-3
-DEFAULT_N_EPOCHS = 10
+DEFAULT_N_EPOCHS = 3
 DEFAULT_BATCH_SIZE = 32
 
 # Misc defaults

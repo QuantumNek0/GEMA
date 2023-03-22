@@ -188,7 +188,7 @@ class MIDI:
                     # this means there was a rest between this note and the last note_off event
                     if duration_in_ticks != 0:
 
-                        self.add_note(-1, duration_in_ticks / time_unit, track=i)
+                        self.add_note(MidiValues.rest, duration_in_ticks / time_unit, track=i)
                         duration_in_ticks = 0
 
                 elif msg.type == "note_off":
@@ -298,7 +298,7 @@ class MidiValues:
     Bb = As
 
     # Rest
-    rest = -1
+    rest = 0
 
     # Music Keys
     Key = namedtuple("Key", ["name", "values"])

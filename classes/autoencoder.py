@@ -70,9 +70,9 @@ class VariationalEncoder(nn.Module):
 
         self.activation = DEFAULT_ACTIVATION
 
-        self.linear1 = nn.Linear(DEFAULT_INPUT_SIZE, DEFAULT_HIDDEN1_SIZE)
-        self.linear2 = nn.Linear(DEFAULT_HIDDEN1_SIZE, DEFAULT_HIDDEN2_SIZE)
-        self.linear3 = nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN3_SIZE)
+        self.linear1 = nn.Linear(DEFAULT_INPUT_SIZE, DEFAULT_HIDDEN1_SIZE, bias=False)
+        self.linear2 = nn.Linear(DEFAULT_HIDDEN1_SIZE, DEFAULT_HIDDEN2_SIZE, bias=False)
+        self.linear3 = nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN3_SIZE, bias=False)
         self.linear4 = nn.Linear(DEFAULT_HIDDEN3_SIZE, latent_dims)
         self.linear5 = nn.Linear(DEFAULT_HIDDEN3_SIZE, latent_dims)
 
@@ -83,7 +83,7 @@ class VariationalEncoder(nn.Module):
         self.N = torch.distributions.Normal(0, 1)
         self.kl = 0
 
-        self.apply(self._init_weights)
+        # self.apply(self._init_weights)
 
         if device == "cuda":
             self.N.loc = self.N.loc.cuda()  # hack to get sampling on the GPU
@@ -104,16 +104,16 @@ class VariationalEncoder(nn.Module):
 
         return z
 
-    @staticmethod
-    def _init_weights(module):
-        class_name = module.__class__.__name__
-
-        if class_name.find('Linear') != -1:
-            n = module.in_features
-            y = 1.0 / np.sqrt(n)
-
-            module.weight.data.uniform_(-y, y)
-            module.bias.data.fill_(0)
+    # @staticmethod
+    # def _init_weights(module):
+    #     class_name = module.__class__.__name__
+    #
+    #     if class_name.find('Linear') != -1:
+    #         n = module.in_features
+    #         y = 1.0 / np.sqrt(n)
+    #
+    #         module.weight.data.uniform_(-y, y)
+    #         module.bias.data.fill_(0)
 
 
 class Decoder(nn.Module):
@@ -122,38 +122,38 @@ class Decoder(nn.Module):
 
         self.activation = DEFAULT_ACTIVATION
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dims, DEFAULT_HIDDEN3_SIZE),
+            nn.Linear(latent_dims, DEFAULT_HIDDEN3_SIZE, bias=False),
             nn.BatchNorm1d(DEFAULT_HIDDEN3_SIZE),
             self.activation,
 
-            nn.Linear(DEFAULT_HIDDEN3_SIZE, DEFAULT_HIDDEN2_SIZE),
+            nn.Linear(DEFAULT_HIDDEN3_SIZE, DEFAULT_HIDDEN2_SIZE, bias=False),
             nn.BatchNorm1d(DEFAULT_HIDDEN2_SIZE),
             self.activation,
 
-            nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN1_SIZE),
+            nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN1_SIZE, bias=False),
             nn.BatchNorm1d(DEFAULT_HIDDEN1_SIZE),
             self.activation,
 
             nn.Linear(DEFAULT_HIDDEN1_SIZE, DEFAULT_INPUT_SIZE),
             nn.Sigmoid()
         )
-        self.apply(self._init_weights)
+        # self.apply(self._init_weights)
 
     def forward(self, x):
         decoded_x = self.decoder(x)
 
         return decoded_x
 
-    @staticmethod
-    def _init_weights(module):
-        class_name = module.__class__.__name__
-
-        if class_name.find('Linear') != -1:
-            n = module.in_features
-            y = 1.0 / np.sqrt(n)
-
-            module.weight.data.uniform_(-y, y)
-            module.bias.data.fill_(0)
+    # @staticmethod
+    # def _init_weights(module):
+    #     class_name = module.__class__.__name__
+    #
+    #     if class_name.find('Linear') != -1:
+    #         n = module.in_features
+    #         y = 1.0 / np.sqrt(n)
+    #
+    #         module.weight.data.uniform_(-y, y)
+    #         module.bias.data.fill_(0)
 
 
 class VariationalAutoencoder(nn.Module):
