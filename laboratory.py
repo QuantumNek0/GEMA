@@ -53,7 +53,7 @@ def latent_to_df(autoencoder: VariationalAutoencoder,
 
             encoded_file = encoded_file.detach().numpy()
             latent_points += [encoded_file]
-            latent_labels += [label.numpy()]
+            latent_labels += [label[0].numpy()]
 
         if i > num_batches:
             break
@@ -65,10 +65,23 @@ def latent_to_df(autoencoder: VariationalAutoencoder,
 
 
 def main():
+    from sklearn.decomposition import PCA
+
     latent_dims = DEFAULT_LATENT_SIZE
 
     midi_dataset = MidiDataset("classes/data/augmented_data")
     data_loader = torch_data.DataLoader(midi_dataset, batch_size=DEFAULT_BATCH_SIZE, shuffle=True)
+
+    # data = torch.stack([midi_dataset[i][0] for i in range(len(midi_dataset))])
+    # std_data = (data - data.mean(dim=0)) / data.std(dim=0)
+
+    # pca = PCA(n_components=2)
+    # pca_data = pca.fit_transform(std_data)
+
+    # plt.scatter(pca_data[:, 0], pca_data[:, 1])
+    # plt.xlabel('PC1')
+    # plt.ylabel('PC2')
+    # plt.show()
 
     vae = VariationalAutoencoder(latent_dims)
     vae.load_state_dict(torch.load("classes/music_vae.pt"))
@@ -86,7 +99,7 @@ def main():
         x = tsne_results[:, 0].tolist()
         y = tsne_results[:, 1].tolist()
 
-        plt.scatter(x, y, c=latent_df["labels"], cmap='tab10')
+        plt.scatter(x, y, c=latent_df["labels"])
         plt.colorbar()
         plt.show()
 
@@ -99,7 +112,7 @@ def main():
             x += [point[0]]
             y += [point[1]]
 
-        plt.scatter(x, y, c=latent_df["labels"], cmap='tab10')
+        plt.scatter(x, y, c=latent_df["labels"])
         plt.colorbar()
         plt.show()
 

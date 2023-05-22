@@ -1,9 +1,10 @@
 from config import *
 from utility.data_augmentation import AugmentedMidi
+from utility.music import relative_min_key, relative_maj_key
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-short_key_encoding = {
+short_key_encoding = { # Even = Major, Odd = Minor // Relative key is +-1
     "Abm": 10,
     "B": 11,
     "Ebm": 12,
@@ -28,6 +29,36 @@ short_key_encoding = {
     "A": 7,
     "C#m": 8,
     "E": 9,
+}
+
+maj_key_encoding = {
+    "B": 6,
+    "F#": 7,
+    "Db": 8,
+    "Ab": 9,
+    "Eb": 10,
+    "Bb": 11,
+    "F": 12,
+    "C": 1,
+    "G": 2,
+    "D": 3,
+    "A": 4,
+    "E": 5,
+}
+
+min_key_encoding = {
+    "Abm": 6,
+    "Ebm": 7,
+    "Bbm": 8,
+    "Fm": 9,
+    "Cm": 10,
+    "Gm": 11,
+    "Dm": 12,
+    "Am": 1,
+    "Em": 2,
+    "Bm": 3,
+    "F#m": 4,
+    "C#m": 5,
 }
 
 
@@ -55,10 +86,38 @@ class MidiDataset(torch_data.Dataset):
             m.add_padding(1, track=1)
 
         notes = [note / N_MIDI_VALUES for note in m.melody[1]["notes"]]
+        notes = torch.tensor(notes, dtype=torch.float32)
         # notes = np.expand_dims(notes, axis=0)
 
-        notes = torch.tensor(notes, dtype=torch.float32)
-        return notes, short_key_encoding[m.key]
+        # encoded_original_key = short_key_encoding[m.key]
+        #
+        # if encoded_original_key % 2 == 0:
+        #     encoded_maj_key = encoded_original_key
+        #     encoded_min_key = (encoded_original_key - 1)
+        #
+        #     if encoded_min_key > 24:
+        #         encoded_min_key = 1
+        #
+        #     elif encoded_min_key < 1:
+        #         encoded_min_key = 24
+        # else:
+        #     encoded_min_key = encoded_original_key
+        #     encoded_maj_key = (encoded_original_key + 1) % 25
+        #
+        #     if encoded_maj_key > 24:
+        #         encoded_maj_key = 1
+        #
+        #     elif encoded_min_key < 1:
+        #         encoded_maj_key = 24
+
+        if m.key.find('m') == -1:
+            encoded_maj_key = maj_key_encoding[m.key]
+            encoded_min_key = min_key_encoding[relative_min_key[m.key]]
+        else:
+            encoded_min_key = min_key_encoding[m.key]
+            encoded_maj_key = maj_key_encoding[relative_maj_key[m.key]]
+
+        return notes, (encoded_maj_key, encoded_min_key)
 
     def __len__(self):
         return len(self.files)
@@ -177,16 +236,84 @@ class VariationalAutoencoder(nn.Module):
     #     return mu + eps * std
 
 
-def train(vae: VariationalAutoencoder, dataset, epochs: int):
+class MajorClassifier(nn.Module):
+    def __init__(self, latent_dims):
+        super(MajorClassifier, self).__init__()
+
+        self.activation = DEFAULT_ACTIVATION
+        self.classifier = nn.Sequential(
+            nn.Linear(latent_dims, DEFAULT_HIDDEN3_SIZE, bias=False),
+            nn.BatchNorm1d(DEFAULT_HIDDEN3_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN3_SIZE, DEFAULT_HIDDEN2_SIZE, bias=False),
+            nn.BatchNorm1d(DEFAULT_HIDDEN2_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN1_SIZE, bias=False),
+            nn.BatchNorm1d(DEFAULT_HIDDEN1_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN1_SIZE, DEFAULT_INPUT_SIZE),
+        )
+        # self.apply(self._init_weights)
+
+    def forward(self, x):
+        decoded_x = self.classifier(x)
+
+        return decoded_x
+
+
+class MinorClassifier(nn.Module):
+    def __init__(self, latent_dims):
+        super(MinorClassifier, self).__init__()
+
+        self.activation = DEFAULT_ACTIVATION
+        self.classifier = nn.Sequential(
+            nn.Linear(latent_dims, DEFAULT_HIDDEN3_SIZE, bias=False),
+            nn.BatchNorm1d(DEFAULT_HIDDEN3_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN3_SIZE, DEFAULT_HIDDEN2_SIZE, bias=False),
+            nn.BatchNorm1d(DEFAULT_HIDDEN2_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN2_SIZE, DEFAULT_HIDDEN1_SIZE, bias=False),
+            nn.BatchNorm1d(DEFAULT_HIDDEN1_SIZE),
+            self.activation,
+
+            nn.Linear(DEFAULT_HIDDEN1_SIZE, DEFAULT_INPUT_SIZE),
+        )
+        # self.apply(self._init_weights)
+
+    def forward(self, x):
+        decoded_x = self.classifier(x)
+
+        return decoded_x
+
+
+def train(vae: VariationalAutoencoder, maj_classifier: MajorClassifier, min_classifier: MinorClassifier, dataset, epochs: int):
     opt = torch.optim.Adam(vae.parameters(), lr=DEFAULT_LEARNING_RATE)
 
-    training_loader = torch_data.DataLoader(dataset, batch_size=DEFAULT_BATCH_SIZE, shuffle=True)
-    validation_loader = torch_data.DataLoader(dataset, batch_size=DEFAULT_BATCH_SIZE, shuffle=False)
+    # Define the proportions for each subset
+    train_ratio = 0.8
+    val_ratio = 0.1
+    test_ratio = 0.1
+
+    # Calculate the lengths of each subset
+    train_len = int(len(dataset) * train_ratio)
+    val_len = int(len(dataset) * val_ratio)
+    test_len = len(dataset) - train_len - val_len
+
+    train_subset, val_subset, test_subset = random_split(dataset, [train_len, val_len, test_len])
+
+    training_loader = torch_data.DataLoader(train_subset, batch_size=DEFAULT_BATCH_SIZE, shuffle=True)
+    validation_loader = torch_data.DataLoader(val_subset, batch_size=DEFAULT_BATCH_SIZE, shuffle=False)
 
     for epoch in range(epochs):
 
-        epoch_loss = train_epoch(vae, training_loader, opt)
-        val_loss = test_epoch(vae, validation_loader)
+        epoch_loss = train_epoch(vae, maj_classifier, min_classifier, training_loader, opt)
+        val_loss = test_epoch(vae, maj_classifier, min_classifier, validation_loader)
 
         print(f"epoch: {epoch+1}/{epochs}, epoch loss = {epoch_loss}\tval loss = {val_loss}\n")
         time.sleep(0.1)
@@ -194,18 +321,34 @@ def train(vae: VariationalAutoencoder, dataset, epochs: int):
     return vae
 
 
-def train_epoch(vae: VariationalAutoencoder, data, opt):
+def train_epoch(vae: VariationalAutoencoder, maj_classifier: MajorClassifier, min_classifier: MinorClassifier, data, opt):
     # Set train mode for both the encoder and the decoder
     vae.train()
+    maj_classifier.train()
+    min_classifier.train()
+
+    classifier_criterion = DEFAULT_CLASSIFIER_CRITERION
     epoch_loss = 0.0
 
-    for x, _ in tqdm(data, desc="training epoch", unit="batch"):
+    for x, y in tqdm(data, desc="training epoch", unit="batch"):
 
         x = x.to(device)
+        # y = y.to(device)
+
         opt.zero_grad()
 
-        x_hat = vae(x)
-        loss = ((x - x_hat) ** 2).sum() + vae.encoder.kl
+        encoded_x = vae.encoder(x)
+
+        y_hat_1 = maj_classifier(encoded_x)
+        y_hat_2 = min_classifier(encoded_x)
+
+        maj_classifier_loss = classifier_criterion(y_hat_1, y[0])
+        min_classifier_loss = classifier_criterion(y_hat_2, y[1])
+
+        # vae_loss = ((x - x_hat) ** 2).sum()
+        # loss = vae_loss + classifier_loss + vae.encoder.kl
+
+        loss = maj_classifier_loss + (0)*min_classifier_loss + (0)*vae.encoder.kl
 
         loss.backward()
         opt.step()
@@ -215,19 +358,34 @@ def train_epoch(vae: VariationalAutoencoder, data, opt):
     return epoch_loss / len(data.dataset)
 
 
-def test_epoch(vae: VariationalAutoencoder, data):
+def test_epoch(vae: VariationalAutoencoder, maj_classifier: MajorClassifier, min_classifier: MinorClassifier, data):
     # Set evaluation mode for encoder and decoder
     vae.eval()
+    maj_classifier.eval()
+    min_classifier.eval()
+
+    classifier_criterion = DEFAULT_CLASSIFIER_CRITERION
     val_loss = 0.0
 
     with torch.no_grad(): # No need to track the gradients
-        for x, _ in tqdm(data, desc="testing epoch", unit="batch"):
+        for x, y in tqdm(data, desc="validating epoch", unit="batch"):
 
             x = x.to(device)
-            encoded_x = vae.encoder(x)
-            x_hat = vae(x)
+            # y = y.to(device)
 
-            loss = ((x - x_hat)**2).sum() + vae.encoder.kl
+            encoded_x = vae.encoder(x)
+
+            y_hat_1 = maj_classifier(encoded_x)
+            y_hat_2 = min_classifier(encoded_x)
+
+            maj_classifier_loss = classifier_criterion(y_hat_1, y[0])
+            min_classifier_loss = classifier_criterion(y_hat_2, y[1])
+
+            # vae_loss = ((x - x_hat)**2).sum()
+            # loss = vae_loss + classifier_loss + vae.encoder.kl
+
+            loss = maj_classifier_loss + (0)*min_classifier_loss + (0)*vae.encoder.kl
+
             val_loss += loss.item()
 
     return val_loss / len(data.dataset)
@@ -241,8 +399,12 @@ def main():
     midi_dataset = MidiDataset("data/augmented_data")
 
     vae = VariationalAutoencoder(latent_dims).to(device)  # GPU
-    vae = train(vae, midi_dataset, epochs=n_epochs)
+    maj_classifier = MajorClassifier(latent_dims).to(device)
+    min_classifier = MinorClassifier(latent_dims).to(device)
+
+    vae = train(vae, maj_classifier, min_classifier, midi_dataset, n_epochs)
     torch.save(vae.state_dict(), 'music_vae.pt')
+    # torch.save(classifier.state_dict(), 'music_classifier.pt')
 
 
 if __name__ == '__main__':

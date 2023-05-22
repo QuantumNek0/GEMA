@@ -27,6 +27,36 @@ alpha_keys = {
     "12A": 5,
 }
 
+maj_alpha_keys = {
+    "1B": 12,
+    "2B": 7,
+    "3B": 2,
+    "4B": 9,
+    "5B": 4,
+    "6B": 11,
+    "7B": 6,
+    "8B": 1,
+    "9B": 8,
+    "10B": 3,
+    "11B": 10,
+    "12B": 5,
+}
+
+min_alpha_keys = {
+    "1A": 12,
+    "2A": 7,
+    "3A": 2,
+    "4A": 9,
+    "5A": 4,
+    "6A": 11,
+    "7A": 6,
+    "8A": 1,
+    "9A": 8,
+    "10A": 3,
+    "11A": 10,
+    "12A": 5,
+}
+
 short_maj_keys = {
     "B": 12,
     "F#": 7,
@@ -81,7 +111,22 @@ relative_min_key = {
     "G": "Em",
     "D": "Bm",
     "A": "F#m",
-    "E": "C#m",
+    "E": "C#m"
+}
+
+relative_maj_key = {
+    "Abm": "B",
+    "Ebm": "F#",
+    "Bbm": "Db",
+    "Fm": "Ab",
+    "Cm": "Eb",
+    "Gm": "Bb",
+    "Dm": "F",
+    "Am": "C",
+    "Em": "G",
+    "Bm": "D",
+    "F#m": "A",
+    "C#m": "E"
 }
 
 short_key_to_accidentals = {
