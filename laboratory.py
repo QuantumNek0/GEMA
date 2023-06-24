@@ -53,7 +53,7 @@ def latent_to_df(autoencoder: VariationalAutoencoder,
 
             encoded_file = encoded_file.detach().numpy()
             latent_points += [encoded_file]
-            latent_labels += [label[0].numpy()]
+            latent_labels += [label.numpy()]
 
         if i > num_batches:
             break
@@ -115,6 +115,12 @@ def main():
         plt.scatter(x, y, c=latent_df["labels"])
         plt.colorbar()
         plt.show()
+
+    # mid = MIDI(single_notes=True)
+    #
+    # mid.read_midi("classes/data/original_data/Avicii_Levels-12B_126.mid")
+    #
+    # print(mid.melody[0]["notes"])
 
 
 if __name__ == "__main__":

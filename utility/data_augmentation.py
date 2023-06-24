@@ -6,8 +6,8 @@ from utility.user_input import alphanumeric_split
 from algorithm.genetic import continuous
 
 DEFAULT_NOTE_DURATION = 0.25
-DEFAULT_N_VARIATIONS = 15
-DEFAULT_N_NOISE_MELODIES = 10
+DEFAULT_N_VARIATIONS_PER_MELODY = 15
+DEFAULT_N_NOISE_MELODIES = 20
 DEFAULT_VARIATION_PROBABILITY = 0.5
 
 
@@ -116,7 +116,7 @@ class AugmentedMidi(MIDI):
 
         return aux_mid
 
-    def variation(self, scale: [], no_variations: int = DEFAULT_N_VARIATIONS, variation_probability: float = DEFAULT_VARIATION_PROBABILITY,
+    def variation(self, scale: [], no_variations: int = DEFAULT_N_VARIATIONS_PER_MELODY, variation_probability: float = DEFAULT_VARIATION_PROBABILITY,
                   note_probability: float = DEFAULT_NOTE_PROBABILITY, midi_range: int = DEFAULT_BITS_PER_NOTE):
 
         from random import randrange
@@ -210,10 +210,10 @@ def write_transpositions(path: str):
             mid = mid.transpose(-(i % int(NO_MAJ_KEYS / 2)))
             k -= 1
 
-        if k > NO_MAJ_KEYS:
-            k = 1
-        elif k < 1:
-            k = 12
+        if k >= NO_MAJ_KEYS:
+            k = 0
+        elif k < 0:
+            k = 11
 
         key_root, key_type = alphanumeric_split(find_in_dict(alpha_keys, k))
         key_signature = find_in_dict(short_maj_keys, k)
@@ -224,9 +224,9 @@ def write_transpositions(path: str):
         mid.write_midi(f"{midi_data.artist}_{midi_data.song}-{key_root}B_{midi_data.bpm}",
                        path=f"../classes/data/augmented_data/transpositions/B/{key_root}")
 
-        relative_mid.add_key(relative_min_key[key_signature])
-        relative_mid.write_midi(f"{midi_data.artist}_{midi_data.song}-{key_root}A_{midi_data.bpm}",
-                       path=f"../classes/data/augmented_data/transpositions/A/{key_root}")
+        # relative_mid.add_key(relative_min_key[key_signature])
+        # relative_mid.write_midi(f"{midi_data.artist}_{midi_data.song}-{key_root}A_{midi_data.bpm}",
+        #                path=f"../classes/data/augmented_data/transpositions/A/{key_root}")
 
 
 def write_variations(path: str, n: int = DEFAULT_N_NOISE_MELODIES):
@@ -246,7 +246,6 @@ def write_variations(path: str, n: int = DEFAULT_N_NOISE_MELODIES):
         while m.total_duration < 16:
             m = m.add_padding(n=1, padding_size=DEFAULT_NOTE_DURATION)
 
-        # print(f"writing variation n.{n} of: {mid}")
         m = m.variation(MidiValues.alpha_key[key_root][key_type])
         m = m.smooth()
 
@@ -254,12 +253,12 @@ def write_variations(path: str, n: int = DEFAULT_N_NOISE_MELODIES):
 
 
 def main():
-    trans = True
+    trans = False
     variations = True
     flip = True
 
-    directory = "../classes/data/original_data"
-    n_originals = len(os.listdir(directory))
+    # directory = "../classes/data/original_data"
+    # n_originals = len(os.listdir(directory))
 
     if trans:
         directory = "../classes/data/original_data"
@@ -272,7 +271,7 @@ def main():
     if variations:
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), total=27, desc="adding noise", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), total=14, desc="adding noise", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
 
@@ -304,7 +303,7 @@ def main():
 
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), total=27, desc="flipping", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), total=14, desc="flipping", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
                     path = os.path.join(root, file)
