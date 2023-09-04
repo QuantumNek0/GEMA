@@ -1,149 +1,35 @@
 from config import *
-from classes.midi import MIDI
-from utility.data_augmentation import AugmentedMidi
-from utility.music import relative_min_key, relative_maj_key
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-short_key_encoding = { # Even = Major, Odd = Minor // Relative key is +-1
-    "Abm": 9,
-    "B": 10,
-    "Ebm": 11,
-    "F#": 12,
-    "Bbm": 13,
-    "Db": 14,
-    "Fm": 15,
-    "Ab": 16,
-    "Cm": 17,
-    "Eb": 18,
-    "Gm": 19,
-    "Bb": 20,
-    "Dm": 21,
-    "F": 22,
-    "Am": 23,
-    "C": 0,
-    "Em": 1,
-    "G": 2,
-    "Bm": 3,
-    "D": 4,
-    "F#m": 5,
-    "A": 6,
-    "C#m": 7,
-    "E": 8,
-}
-
-maj_key_encoding = {
-    "B": 5,
-    "F#": 6,
-    "Db": 7,
-    "Ab": 8,
-    "Eb": 9,
-    "Bb": 10,
-    "F": 11,
-    "C": 0,
-    "G": 1,
-    "D": 2,
-    "A": 3,
-    "E": 4,
-}
-
-min_key_encoding = {
-    "Abm": 5,
-    "Ebm": 6,
-    "Bbm": 7,
-    "Fm": 8,
-    "Cm": 9,
-    "Gm": 10,
-    "Dm": 11,
-    "Am": 0,
-    "Em": 1,
-    "Bm": 2,
-    "F#m": 3,
-    "C#m": 4,
-}
+kl_w = DEFAULT_KL_WEIGHT
+classifier_w = DEFAULT_CLASSIFIER_WEIGHT
+reconstruction_w = DEFAULT_RECONSTRUCTION_WEIGHT
 
 
-class MidiDataset(torch_data.Dataset):
-    def __init__(self, data_dir, are_tensors: bool = True):
-        self.data_dir = data_dir
-        self.are_tensors = are_tensors
-        self.classes = sorted(os.listdir(data_dir))
-        self.midi = []
-        for i, cls in enumerate(self.classes):
-            if cls == ".DS_Store":
-                continue
-            cls_dir = os.path.join(data_dir, cls)
+class CsvDataset(torch_data.Dataset):
+    def __init__(self, path):
+        self.data = []
 
-            for f in tqdm(os.listdir(cls_dir), desc="loading midis", unit="midi"):
-                if f.endswith(".mid"):
-                    midi_path = os.path.join(cls_dir, f)
+        dataframe = pd.read_csv(path)
+        column_names = dataframe.columns.tolist()
 
-                    m = MIDI(single_notes=True, playable=False)
-                    m.read_midi(midi_path)
+        for features, label in tqdm(zip(dataframe[column_names[1]], dataframe[column_names[2]]), desc="loading data", total=len(dataframe)):
 
-                    notes = [note for note in m.melody[1]["notes"]]
-                    note_lengths = [note_len for note_len in m.melody[1]["durations"]]
+            features = features.replace('[', '')
+            features = features.replace(']', '')
+            features = features.split(',')
 
-                    if self.are_tensors:
-                        notes = torch.tensor(notes, dtype=torch.float32)
-                        note_lengths = torch.tensor(note_lengths, dtype=torch.float32)
+            for i, value in enumerate(features):
+                features[i] = float(value)
 
-                    self.midi.append((notes, note_lengths, m.key, m.bpm))
-
-    def __getitem__(self, index):
-        return self.midi[index]
-
-    def __setitem__(self, key, value):
-        self.midi[key] = value
+            self.data.append((torch.tensor(features, dtype=torch.float32), label))
 
     def __len__(self):
-        return len(self.midi)
+        return len(self.data)
 
-
-def preprocess_midi(midi_data: MidiDataset):
-
-    i = 0
-    for notes, note_lengths, key, bpm in tqdm(midi_data, desc="preprocessing midis", unit="midi"):
-
-        m = AugmentedMidi(single_notes=True, playable=False)
-        m.add_key(key)
-        m.add_tempo(bpm)
-
-        for note, note_length in zip(notes, note_lengths):
-
-            m.add_note(int(note.numpy()), note_length.numpy())
-
-        m.normalize()
-        while sum(m.melody[0]["durations"]) < 16: # Duration of 4 bars
-            m.add_padding(1)
-
-        normalized_notes = [raw_note / N_MIDI_VALUES for raw_note in m.melody[0]["notes"]]
-        if midi_data.are_tensors:
-            normalized_notes = torch.tensor(normalized_notes, dtype=torch.float32)
-
-        if key.find('m') == -1:
-            encoded_maj_key = maj_key_encoding[key]
-            # encoded_min_key = min_key_encoding[relative_min_key[m.key]]
-        else:
-            # encoded_min_key = min_key_encoding[m.key]
-            encoded_maj_key = maj_key_encoding[relative_maj_key[key]]
-
-        midi_data[i] = (normalized_notes, encoded_maj_key)
-        i += 1
-
-    return midi_data
-
-
-def data_report(data: torch_data.Dataset, columns: [], title: str = "Data Report"):
-    from dataprep.eda import create_report
-
-    df = pd.DataFrame(columns=columns)
-
-    for i, sample_point in enumerate(data):
-        df.loc[i] = [*sample_point]
-
-    report = create_report(df, title=title)
-    report.save()
+    def __getitem__(self, index):
+        return self.data[index]
 
 
 class VariationalEncoder(nn.Module):
@@ -165,10 +51,8 @@ class VariationalEncoder(nn.Module):
         self.N = torch.distributions.Normal(0, 1)
         self.kl = 0
 
-        # self.apply(self._init_weights)
-
         if device == "cuda":
-            self.N.loc = self.N.loc.cuda()  # hack to get sampling on the GPU
+            self.N.loc = self.N.loc.cuda()
             self.N.scale = self.N.scale.cuda()
 
     def forward(self, x):
@@ -185,17 +69,6 @@ class VariationalEncoder(nn.Module):
         self.kl = (sigma ** 2 + mu ** 2 - torch.log(sigma) - 1 / 2).sum()
 
         return z
-
-    # @staticmethod
-    # def _init_weights(module):
-    #     class_name = module.__class__.__name__
-    #
-    #     if class_name.find('Linear') != -1:
-    #         n = module.in_features
-    #         y = 1.0 / np.sqrt(n)
-    #
-    #         module.weight.data.uniform_(-y, y)
-    #         module.bias.data.fill_(0)
 
 
 class Decoder(nn.Module):
@@ -219,23 +92,11 @@ class Decoder(nn.Module):
             nn.Linear(DEFAULT_VAE_HIDDEN1_SIZE, DEFAULT_VAE_INPUT_SIZE, bias=False),
             nn.Sigmoid()
         )
-        # self.apply(self._init_weights)
 
     def forward(self, x):
         decoded_x = self.decoder(x)
 
         return decoded_x
-
-    # @staticmethod
-    # def _init_weights(module):
-    #     class_name = module.__class__.__name__
-    #
-    #     if class_name.find('Linear') != -1:
-    #         n = module.in_features
-    #         y = 1.0 / np.sqrt(n)
-    #
-    #         module.weight.data.uniform_(-y, y)
-    #         module.bias.data.fill_(0)
 
 
 class VariationalAutoencoder(nn.Module):
@@ -245,18 +106,14 @@ class VariationalAutoencoder(nn.Module):
         self.encoder = VariationalEncoder(latent_dims)
         self.decoder = Decoder(latent_dims)
 
+        self.latent_dims = latent_dims
+        self.vector_target = []
+
     def forward(self, x):
         x = x.to(device)
         encoded_x = self.encoder(x)
 
         return self.decoder(encoded_x)
-
-    # @staticmethod
-    # def reparameterize(mu, log_var):
-    #     std = torch.exp(0.5 * log_var)
-    #     eps = torch.randn_like(std)
-    #
-    #     return mu + eps * std
 
 
 class Classifier(nn.Module):
@@ -279,7 +136,7 @@ class Classifier(nn.Module):
 
             nn.Linear(DEFAULT_CLASSIFIER_HIDDEN3_SIZE, DEFAULT_CLASSIFIER_OUTPUT_SIZE, bias=False),
         )
-        # self.apply(self._init_weights)
+        self.latent_dims = latent_dims
 
     def forward(self, x):
         decoded_x = self.classifier(x)
@@ -287,7 +144,7 @@ class Classifier(nn.Module):
         return decoded_x
 
 
-def train(vae: VariationalAutoencoder, classifier: Classifier, dataset, epochs: int):
+def train(vae: VariationalAutoencoder, classifier, dataset, epochs: int):
     params = list(vae.parameters()) + list(classifier.parameters())
     opt = torch.optim.Adam(params, lr=DEFAULT_LEARNING_RATE)
 
@@ -334,23 +191,22 @@ def train(vae: VariationalAutoencoder, classifier: Classifier, dataset, epochs: 
     test_loss, entropy, precision, accuracy = test_epoch(vae, classifier, test_loader)
     print(f"test loss = {test_loss}\tentropy = {entropy}\tprecision = {precision}\taccuracy = {accuracy}\n")
 
-    import matplotlib.pyplot as plt; plt.rcParams['figure.dpi'] = 150
-
     plt.plot(range(epochs), epoch_losses, label='Training Loss')
     plt.plot(range(epochs), val_losses, label='Validation Loss')
-    plt.plot(range(epochs), epochs_entropy, label='Entropy')
+    # plt.plot(range(epochs), epochs_entropy, label='Entropy')
     plt.plot(range(epochs), epochs_precision, label='Precision')
-    plt.plot(range(epochs), epochs_accuracy, label='Accuracy')
+    # plt.plot(range(epochs), epochs_accuracy, label='Accuracy')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.title('Loss at Different Epochs')
     plt.legend(loc='upper center')
+    plt.savefig('files/epoch_losses.png')
     plt.show()
 
     return vae
 
 
-def train_epoch(vae: VariationalAutoencoder, classifier: Classifier, data, opt):
+def train_epoch(vae: VariationalAutoencoder, classifier, data, opt):
     # Set train mode for both the encoder and the decoder
     vae.train()
     classifier.train()
@@ -369,14 +225,13 @@ def train_epoch(vae: VariationalAutoencoder, classifier: Classifier, data, opt):
         opt.zero_grad()
 
         encoded_x = vae.encoder(x)
-        y_hat = classifier(encoded_x)
         x_hat = vae(x)
+        y_hat = classifier(encoded_x)
 
-        classifier_loss = classifier_criterion(y_hat, y)
         vae_loss = ((x - x_hat) ** 2).sum()
-        # loss = vae_loss + classifier_loss + vae.encoder.kl
+        classifier_loss = classifier_criterion(y_hat, y)
 
-        loss = classifier_loss + vae.encoder.kl
+        loss = (kl_w * vae.encoder.kl) + (classifier_w * classifier_loss) + (reconstruction_w * vae_loss)
 
         _, y_pred = torch.max(y_hat, 1)
         p = precision_score(y.numpy(), y_pred.numpy(), average='micro')
@@ -387,20 +242,20 @@ def train_epoch(vae: VariationalAutoencoder, classifier: Classifier, data, opt):
 
         epoch_loss += loss.item()
         entropy += vae_loss.item()
-        precision += p.item()
+        precision += p
         accuracy += acc
 
-    len_data = len(data.dataset)
+    len_data = round(len(data.dataset) / DEFAULT_BATCH_SIZE)
 
     epoch_loss /= len_data
     entropy /= len_data
-    precision /= len_data
+    precision = precision / len_data
     accuracy /= len_data
 
     return epoch_loss, entropy, precision, accuracy
 
 
-def val_epoch(vae: VariationalAutoencoder, classifier: Classifier, data):
+def val_epoch(vae: VariationalAutoencoder, classifier, data):
     # Set evaluation mode for encoder and decoder
     vae.eval()
     classifier.eval()
@@ -418,14 +273,13 @@ def val_epoch(vae: VariationalAutoencoder, classifier: Classifier, data):
             # y = y.to(device)
 
             encoded_x = vae.encoder(x)
-            y_hat = classifier(encoded_x)
             x_hat = vae(x)
+            y_hat = classifier(encoded_x)
 
-            classifier_loss = classifier_criterion(y_hat, y)
             vae_loss = ((x - x_hat)**2).sum()
-            # loss = vae_loss + classifier_loss + vae.encoder.kl
+            classifier_loss = classifier_criterion(y_hat, y)
 
-            loss = classifier_loss + vae.encoder.kl
+            loss = (kl_w * vae.encoder.kl) + (classifier_w * classifier_loss) + (reconstruction_w * vae_loss)
 
             _, y_pred = torch.max(y_hat, 1)
             p = precision_score(y.numpy(), y_pred.numpy(), average='micro')
@@ -433,20 +287,20 @@ def val_epoch(vae: VariationalAutoencoder, classifier: Classifier, data):
 
             val_loss += loss.item()
             entropy += vae_loss.item()
-            precision += p.item()
+            precision += p
             accuracy += acc
 
-    len_data = len(data.dataset)
+    len_data = round(len(data.dataset) / DEFAULT_BATCH_SIZE)
 
     val_loss /= len_data
     entropy /= len_data
-    precision /= len_data
+    precision = precision / len_data
     accuracy /= len_data
 
     return val_loss, entropy, precision, accuracy
 
 
-def test_epoch(vae: VariationalAutoencoder, classifier: Classifier, data):
+def test_epoch(vae: VariationalAutoencoder, classifier, data):
     # Set evaluation mode for encoder and decoder
     vae.eval()
     classifier.eval()
@@ -464,29 +318,27 @@ def test_epoch(vae: VariationalAutoencoder, classifier: Classifier, data):
             # y = y.to(device)
 
             encoded_x = vae.encoder(x)
-            y_hat = classifier(encoded_x)
             x_hat = vae(x)
-
-            classifier_loss = classifier_criterion(y_hat, y)
+            y_hat = classifier(encoded_x)
 
             vae_loss = ((x - x_hat)**2).sum()
-            # loss = vae_loss + classifier_loss + vae.encoder.kl
+            classifier_loss = classifier_criterion(y_hat, y)
 
-            loss = classifier_loss + vae.encoder.kl
+            loss = (kl_w * vae.encoder.kl) + (classifier_w * classifier_loss) + (reconstruction_w * vae_loss)
 
             _, y_pred = torch.max(y_hat, 1)
             p = precision_score(y.numpy(), y_pred.numpy(), average='micro')
             acc = accuracy_score(y.numpy(), y_pred.numpy())
 
-            print(f"\ny = {y}")
-            print(f"y_pred = {y_pred}")
-
             test_loss += loss.item()
             entropy = vae_loss.item()
-            precision += p.item()
+            precision += p
             accuracy += acc
 
-    len_data = len(data.dataset)
+            # print(f"y: {y}")
+            # print(f"y_hat: {y_pred}")
+
+    len_data = round(len(data.dataset) / DEFAULT_BATCH_SIZE)
 
     test_loss /= len_data
     entropy /= len_data
@@ -496,23 +348,186 @@ def test_epoch(vae: VariationalAutoencoder, classifier: Classifier, data):
     return test_loss, entropy, precision, accuracy
 
 
+def centroids(vae, data):
+    latent_df = latent_to_df(vae, data)
+    x = to_array(latent_df['points'])
+
+    kmeans = KMedoids(n_clusters=NO_MAJ_KEYS, init="k-medoids++", max_iter=300).fit(x)
+
+    return torch.FloatTensor(kmeans.cluster_centers_)
+
+
+def randn_latent_walk(latent_dims, num_steps, step_size, v0):
+    v0 = v0.reshape(1, latent_dims)
+
+    steps = torch.randn(num_steps, latent_dims)
+    rand_walk = torch.zeros(num_steps + 1, latent_dims)
+    rand_walk[0] = v0
+
+    for i in range(num_steps):
+        rand_walk[i + 1] = rand_walk[i] + steps[i] * step_size
+
+    rand_walk = torch.FloatTensor(rand_walk)
+    return rand_walk
+
+
+# def find_target_vectors(vae, classifier):
+#
+#     print("finding target vectors...")
+#     v0 = torch.randn(1, vae.latent_dims)
+#
+#     for i in range(NO_MAJ_KEYS):
+#         vector_target = find_target(classifier, v0, target=i)
+#         vae.vector_target += [vector_target]
+#
+#
+# def find_target(classifier, v0, target: int = 0, f_step_size: float = 0.1, max_steps: int = 1000, w_step_size: int = 1e-9, walk_size: int = 10):
+#     vi = v0
+#     i = 0
+#
+#     while not is_on_target(classifier, vi, target, walk_size, w_step_size):
+#         step = torch.randn(1, classifier.latent_dims) * f_step_size
+#         vi = vi + step
+#
+#         i += 1
+#         if i > max_steps:
+#             vi = v0
+#             i = 0
+#
+#     return vi
+#
+#
+# def is_on_target(classifier, vector, target, walk_size, step_size):
+#     classifier.eval()
+#     vector_walk = [vector[0].numpy()]
+#
+#     for _ in range(walk_size):
+#         step = torch.randn(1, classifier.latent_dims) * step_size
+#         vector += step
+#
+#         vector_walk.append(vector[0].numpy())
+#
+#     vector_walk = torch.FloatTensor(vector_walk)
+#
+#     label_pred = classifier(vector_walk)
+#     _, label_pred = torch.max(label_pred, 1)
+#
+#     for label in label_pred:
+#
+#         if int(label) != target:
+#             return False
+#
+#     return True
+
+
+def to_array(df: pd.DataFrame) -> np.array:
+
+    arr = []
+    for item in df:
+        arr += [item]
+
+    return np.array(arr)
+
+
+def latent_to_df(autoencoder: VariationalAutoencoder, data) -> pd.DataFrame:
+    latent_df = pd.DataFrame()
+    autoencoder.encoder.eval()
+
+    data_loader = torch_data.DataLoader(data, batch_size=DEFAULT_BATCH_SIZE, shuffle=False)
+
+    latent_points = []
+    latent_labels = []
+    for file_batch, label_batch in tqdm(data_loader, desc="plotting batches", unit="batch", total=len(data_loader)):
+        encoded_batch = autoencoder.encoder(file_batch)
+
+        for encoded_file, label in zip(encoded_batch, label_batch):
+            encoded_file = encoded_file.detach().numpy()
+
+            latent_points += [encoded_file]
+            latent_labels += [label.numpy()]
+
+    latent_df["points"] = latent_points
+    latent_df["labels"] = latent_labels
+
+    return latent_df
+
+
+def plot2d_latent(vae, data, show_plot: bool = True):
+
+    from sklearn.manifold import TSNE
+
+    latent_df = latent_to_df(vae, data)
+    fig, ax = plt.subplots()
+
+    if vae.latent_dims > 2:
+        print(f"applying TSNE transformation...")
+
+        points = to_array(latent_df["points"])
+
+        tsne = TSNE(n_components=2)
+        tsne_results = tsne.fit_transform(points)
+
+        x = tsne_results[:, 0].tolist()
+        y = tsne_results[:, 1].tolist()
+
+    else:
+        x = []
+        y = []
+
+        for point in latent_df["points"]:
+            x += [point[0]]
+            y += [point[1]]
+
+    x_centroid = []
+    y_centroid = []
+    for vector in vae.vector_target:
+        x_centroid += [vector[0]]
+        y_centroid += [vector[1]]
+
+    ax.scatter(x, y, c=latent_df["labels"])
+    ax.scatter(x_centroid, y_centroid, marker='*', c='black', s=100)
+    ax.set_xlim(-1.5, 1.5)
+    ax.set_ylim(-2, 2)
+
+    if show_plot:
+        fig.savefig('files/latent_space.png')
+        plt.show()
+
+    return fig, ax
+
+
+def plot2d_walk(walk, ax_latent):
+
+    x = []
+    y = []
+    for step in walk:
+        x += [step[0]]
+        y += [step[1]]
+
+    ax_latent.plot(x, y, marker='o', c='black', linestyle='-')
+
+    return ax_latent
+
+
 def main():
     # Hyperparameters
     latent_dims = DEFAULT_LATENT_SIZE
     n_epochs = DEFAULT_N_EPOCHS
 
-    midi_dataset = MidiDataset("data/augmented_data")
-
-    # data_report(midi_dataset, columns=['notes', 'note_lengths', 'key', 'bpm'], title="Raw Data")
-    midi_dataset = preprocess_midi(midi_dataset)
-    # data_report(midi_dataset, columns=['notes', 'label'], title="Preprocessed Data")
+    dataset = CsvDataset("data/preprocessed_data/preprocessed_data.csv")
 
     vae = VariationalAutoencoder(latent_dims).to(device)  # GPU
     classifier = Classifier(latent_dims).to(device)
 
-    vae = train(vae, classifier, midi_dataset, n_epochs)
-    torch.save(vae.state_dict(), 'music_vae.pt')
-    torch.save(classifier.state_dict(), 'music_classifier.pt')
+    vae = train(vae, classifier, dataset, n_epochs)
+    vae.vector_target = centroids(vae, dataset) # K-means
+
+    plot2d_latent(vae, dataset)
+
+    torch.save(vae.state_dict(), 'files/music_vae.pt')
+    torch.save(classifier.state_dict(), 'files/music_classifier.pt')
+
+    torch.save(vae.vector_target, 'files/vector_targets.pt')
 
 
 if __name__ == '__main__':

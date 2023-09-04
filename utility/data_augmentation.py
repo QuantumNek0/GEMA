@@ -3,10 +3,9 @@ from config import *
 from classes.midi import *
 from utility.music import *
 from utility.user_input import alphanumeric_split
-from algorithm.genetic import continuous
 
 DEFAULT_NOTE_DURATION = 0.25
-DEFAULT_N_VARIATIONS_PER_MELODY = 15
+DEFAULT_N_VARIATIONS_PER_MELODY = 8
 DEFAULT_N_NOISE_MELODIES = 20
 DEFAULT_VARIATION_PROBABILITY = 0.5
 
@@ -33,7 +32,26 @@ def extract_midi_data(path: str) -> MidiData:
     return MidiData(artist, song, key, int(bpm))
 
 
+def continuous(array: [], return_sorted: bool = False) -> []:
+    """
+    merges a list of arrays into one array
+
+    :param array: [[], [], ...]
+    :param return_sorted: returns the continuous_array either sorted or not
+    :return: returns a single array [] from an array made out of other arrays [[], [], ...]
+    """
+
+    continuous_array = []
+    for arr in array:
+        continuous_array += arr
+    return sorted(continuous_array) if return_sorted else continuous_array
+
+
 class AugmentedMidi(MIDI):
+
+    def reboot_server(self):
+        if self.playable:
+            self.s = Server().boot()
 
     def normalize(self, max_note_duration: float = DEFAULT_NOTE_DURATION):
 
@@ -41,8 +59,11 @@ class AugmentedMidi(MIDI):
             raise Exception("Currently there's no support for multi-note normalization.")
 
         aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
-        aux_mid.add_tempo(self.bpm)
-        aux_mid.add_key(self.key)
+        try:
+            aux_mid.add_tempo(self.bpm)
+            aux_mid.add_key(self.key)
+        except AttributeError:
+            pass
 
         for t, track in enumerate(self.melody):
 
@@ -80,8 +101,11 @@ class AugmentedMidi(MIDI):
             raise Exception("Currently there's no support for multi-note smoothing.")
 
         aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
-        aux_mid.add_tempo(self.bpm)
-        aux_mid.add_key(self.key)
+        try:
+            aux_mid.add_tempo(self.bpm)
+            aux_mid.add_key(self.key)
+        except AttributeError:
+            pass
 
         for t, track in enumerate(self.melody):
 
@@ -120,11 +144,14 @@ class AugmentedMidi(MIDI):
                   note_probability: float = DEFAULT_NOTE_PROBABILITY, midi_range: int = DEFAULT_BITS_PER_NOTE):
 
         from random import randrange
-        from statistics import median
+        from statistics import median_low
 
         aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
-        aux_mid.add_tempo(self.bpm)
-        aux_mid.add_key(self.key)
+        try:
+            aux_mid.add_tempo(self.bpm)
+            aux_mid.add_key(self.key)
+        except AttributeError:
+            pass
 
         scale = continuous(scale, return_sorted=True)  # gets rid of the separations between notes
 
@@ -132,7 +159,7 @@ class AugmentedMidi(MIDI):
             note = track["notes"]
             duration = track["durations"]
 
-            root = round(median(note))
+            root = median_low([n for n in note if n != 0])
             root_pos = scale.index(root)  # finds the root in this new array
 
             for _ in range(no_variations):
@@ -150,7 +177,10 @@ class AugmentedMidi(MIDI):
 
     def transpose(self, semitones: int):
         aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
-        aux_mid.add_tempo(self.bpm)
+        try:
+            aux_mid.add_tempo(self.bpm)
+        except AttributeError:
+            pass
 
         for t, track in enumerate(self.melody):
 
@@ -168,8 +198,11 @@ class AugmentedMidi(MIDI):
 
     def flip(self):
         aux_mid = type(self)(self.name, self.n_tracks, self.single_notes, self.playable)
-        aux_mid.add_tempo(self.bpm)
-        aux_mid.add_key(self.key)
+        try:
+            aux_mid.add_tempo(self.bpm)
+            aux_mid.add_key(self.key)
+        except AttributeError:
+            pass
 
         for t, track in enumerate(self.melody):
 
@@ -253,9 +286,9 @@ def write_variations(path: str, n: int = DEFAULT_N_NOISE_MELODIES):
 
 
 def main():
-    trans = False
+    trans = True
     variations = True
-    flip = True
+    flip = False
 
     # directory = "../classes/data/original_data"
     # n_originals = len(os.listdir(directory))
@@ -271,7 +304,7 @@ def main():
     if variations:
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), total=14, desc="adding noise", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), desc="adding noise", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
 
@@ -303,7 +336,7 @@ def main():
 
         directory = "../classes/data/augmented_data/transpositions"
 
-        for root, dirs, files in tqdm(os.walk(directory), total=14, desc="flipping", unit="directories"):
+        for root, dirs, files in tqdm(os.walk(directory), desc="flipping", unit="directories"):
             for file in files:
                 if file.endswith(".mid"):
                     path = os.path.join(root, file)

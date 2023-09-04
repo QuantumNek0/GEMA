@@ -2,6 +2,7 @@ from config import *
 
 from algorithm.genetic import *
 from utility.user_input import *
+from utility.data_augmentation import DEFAULT_NOTE_DURATION
 
 
 # Global variables
@@ -48,25 +49,24 @@ def main():
         while not valid_parameters:
             # default values
 
-            if not confirmation("Use default values?"):
+            if not ask("Use default values?"):
 
-                if confirmation("Show advanced options?"):
-                    bits_per_note = int(input("Bits per note: "))
-                    population_size = int(input("Population size: "))
-                    output_size = int(input("Output size: "))
+                bits_per_note = int(input("Bits per note: "))
+                population_size = int(input("Population size: "))
+                output_size = int(input("Output size: "))
 
-                notes_per_bar = int(input("Notes per bar: "))
-                no_bars = int(input("Number of bars: "))
+                # notes_per_bar = int(input("Notes per bar: "))
+                # no_bars = int(input("Number of bars: "))
                 bpm = int(input("Beats per minute: "))
 
             clear_screen()
 
-            if not confirmation("randomize key?"):
+            if not ask("randomize key?"):
                 key_root = select_option((s.name for s in MidiValues.key_names), "Root of scale")
                 key_type = select_option((s.name for s in MidiValues.key_names[key_root].values), "Scale type")
             else:
-                key_root = randrange(0, len(MidiValues.key_names))
-                key_type = randrange(0, len(MidiValues.key_names[key_root].values))
+                key_root = random.randrange(0, len(MidiValues.key_names))
+                key_type = random.randrange(0, len(MidiValues.key_names[key_root].values))
 
             if not (are_all_positives([bits_per_note, population_size, output_size, notes_per_bar, no_bars, bpm], can_be_zero=False) \
                     and output_size <= population_size):
@@ -79,17 +79,42 @@ def main():
 
             clear_screen()
 
-        note_length = time_signature.beats_per_bar / notes_per_bar
+        # note_length = time_signature.beats_per_bar / notes_per_bar
+        note_length = DEFAULT_NOTE_DURATION
         key = MidiValues.key_names[key_root].values[key_type].values
+        target = long_key_to_target[MidiValues.key_names[key_root].values[key_type].name]
+        print(f"Selected key: {MidiValues.key_names[key_root].values[key_type].name}")
 
-        population, number_generations = run_evolution(
-            populate_func=partial(
+        if ask("Use VAE for first gen?"):
+            latent_dims = DEFAULT_LATENT_SIZE
+            step_size = DEFAULT_STEP_SIZE
+
+            vae = VariationalAutoencoder(latent_dims)
+            vae.load_state_dict(torch.load("classes/files/music_vae.pt"))
+            vae.eval()
+
+            populate_func = partial(
+                gen_latent_population,
+                population_size=population_size,
+                bits_per_note=bits_per_note,
+                step_size=step_size,
+                note_length=note_length,
+                bpm=bpm,
+                target=target,
+                autoencoder=vae
+            )
+        else:
+            populate_func = partial(
                 gen_rand_population,
                 population_size=population_size,
                 bits_per_note=bits_per_note,
                 note_length=note_length,
                 no_bars=no_bars
-            ),
+            )
+
+        population, number_generations = run_evolution(
+            populate_func=populate_func,
+
             fitness_func=partial(
                 fitness,
                 key=key,
@@ -112,7 +137,7 @@ def main():
         time.sleep(DEFAULT_SLEEP_SECS)
 
         clear_screen()
-        continue_evolution = False if not confirmation("generate another melody?") else True
+        continue_evolution = False if not ask("generate another melody?") else True
 
 
 if __name__ == '__main__':

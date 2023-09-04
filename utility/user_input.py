@@ -13,7 +13,7 @@ def clear_screen():
         _ = os.system('clear')
 
 
-def confirmation(prompt: str) -> bool:
+def ask(prompt: str) -> bool:
     """
     asks the user for a yes/no answer based on the ''prompt''
 
