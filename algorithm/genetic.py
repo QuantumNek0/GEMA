@@ -114,6 +114,7 @@ def gen_latent_population(
 
     from utility.music import key_encoding_key
     from classes.autoencoder import plot2d_latent, plot2d_walk, CsvDataset
+    import streamlit as st
 
     num_steps = population_size - 1
 
@@ -127,7 +128,7 @@ def gen_latent_population(
     fig_latent, ax_latent = plot2d_latent(autoencoder, dataset, show_plot=False)
     ax_latent = plot2d_walk(latent_walk, ax_latent)
     fig_latent.savefig("classes/temp/rand_walk.png")
-    plt.show()
+    st.image("classes/temp/rand_walk.png", caption="Random Walk in Latent Space", use_column_width=True)
 
     autoencoder.decoder.eval()
     melodies = autoencoder.decoder(latent_walk)

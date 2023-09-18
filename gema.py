@@ -3,19 +3,25 @@ from config import *
 from algorithm.genetic import *
 from utility.user_input import *
 from utility.data_augmentation import DEFAULT_NOTE_DURATION
+import streamlit as st
 
 
-def main(key_root: int = 0, key_type: int = 0, bits_per_note: int = DEFAULT_BITS_PER_NOTE, population_size: int = DEFAULT_POPULATION_SIZE,
-         output_size: int = DEFAULT_OUTPUT_SIZE, bpm: int = DEFAULT_BPM, use_vae: bool = True):
+def main(key_root: str = 'C', key_type: str = 'natural', key_mode: str = 'maj', bits_per_note: int = DEFAULT_BITS_PER_NOTE,
+         population_size: int = DEFAULT_POPULATION_SIZE, output_size: int = DEFAULT_OUTPUT_SIZE, bpm: int = DEFAULT_BPM,
+         first_gen_method: str = 'Random'):
 
     note_length = DEFAULT_NOTE_DURATION
     no_bars = DEFAULT_NO_BARS
     clear_screen() # clears the pyo prompt
 
-    key = MidiValues.key_names[key_root].values[key_type].values
-    target = long_key_to_target[MidiValues.key_names[key_root].values[key_type].name]
+    if key_type == 'natural':
+        target = long_key_to_target[key_root + ' ' + key_mode + 'or']
+    else:
+        target = long_key_to_target[key_root + key_type + ' ' + key_mode + 'or']
 
-    if use_vae:
+    key = MidiValues.key[key_root][key_type][key_mode]
+
+    if first_gen_method == 'VAE':
         latent_dims = DEFAULT_LATENT_SIZE
         step_size = DEFAULT_STEP_SIZE
 
@@ -33,7 +39,7 @@ def main(key_root: int = 0, key_type: int = 0, bits_per_note: int = DEFAULT_BITS
             target=target,
             autoencoder=vae
         )
-    else:
+    elif first_gen_method == 'Random':
         populate_func = partial(
             gen_rand_population,
             population_size=population_size,
@@ -62,9 +68,7 @@ def main(key_root: int = 0, key_type: int = 0, bits_per_note: int = DEFAULT_BITS
 
     clear_screen()  # clears pyo prompt
 
-    print("\nhighest rated melodies stored in midi files!")
-    time.sleep(DEFAULT_SLEEP_SECS)
-    clear_screen()
+    st.write("highest rated melodies stored in 'out' directory!")
 
 
 if __name__ == '__main__':
